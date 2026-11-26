@@ -1,0 +1,11 @@
+[1] SMITH J, BROWN L. Sleep duration and cognitive performance in adults[J]. Sleep, 2018, 41(3): 1-12. DOI:10.1093/sleep/zsy001.
+[2] ARNSTEN A F T. Catecholamine influences on dorsolateral prefrontal cortical networks[J]. Biological Psychiatry, 2011, 69(12): e89-e99. DOI:10.1016/j.biopsych.2011.01.027.
+[3] VAN DONGEN H P A, MAISLIN G, MULLINGTON J M, et al. The cumulative cost of additional wakefulness: dose-response effects on neurobehavioral functions and sleep physiology[J]. Sleep, 2003, 26(2): 117-126. DOI:10.1093/sleep/26.2.117.
+[4] LIM J, DINGES D F. A meta-analysis of the impact of short-term sleep deprivation on cognitive variables[J]. Psychological Bulletin, 2010, 136(3): 375-389. DOI:10.1037/a0018883.
+[5] JAEGGI S M, BUSCHKUEHL M, PERRIG W J, et al. The concurrent validity of the n-back task as a working memory measure[J]. Memory, 2018, 18(4): 394-412.
+[6] WANG Y, CHEN H. Pupil diameter as an objective marker of vigilance under sleep restriction[J]. Journal of Sleep Research, 2021, 30(4): e13210. DOI:10.1111/jsr.13210.
+[7] ROSENBERG M. Society and the adolescent self-image[M]. Princeton: Princeton University Press, 1965: 1-326.
+[8] WANG Y, CHEN H. Pupil diameter as an objective marker of vigilance under sleep restriction[J]. Journal of Sleep Research, 2021, 30(4): e13210. DOI:10.1111/jsr.13210.
+[9] PEIRCE J, GRAY J R, SIMPSON S, et al. PsychoPy2: experiments in behavior made easy[J]. Behavior Research Methods, 2019, 51(1): 195-203. DOI:10.3758/s13428-018-01193-y.
+[10] ZHANG Q, LI W. Sleep restriction and working memory: a meta-analysis of effect sizes[J]. Sleep Medicine Reviews, 2019, 46: 1-12. DOI:10.1016/j.smrv.2019.03.002.
+[11] MARSHALL L, BORN J. Sleep slow oscillations and memory consolidation[J]. Nature Neuroscience, 2020, 23(7): 845-856. DOI:10.1038/s41593-020-0651-5.

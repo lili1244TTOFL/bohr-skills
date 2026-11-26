@@ -1,0 +1,50 @@
+{
+ "研究问题": {
+  "status": "auto",
+  "items": [
+   {
+    "text": "We study sleep restriction.",
+    "anchor": "P1-0",
+    "page": 1,
+    "section": "# Abstract"
+   }
+  ]
+ },
+ "数据": {
+  "status": "auto",
+  "items": [
+   {
+    "text": "We study sleep restriction.",
+    "anchor": "P1-0",
+    "page": 1,
+    "section": "# Abstract"
+   }
+  ]
+ },
+ "方法条件": {
+  "status": "auto",
+  "items": [
+   {
+    "text": "We measured working memory with the n-back task for 7 days.",
+    "anchor": "P1-1",
+    "page": 1,
+    "section": "## 1 Methods"
+   }
+  ]
+ },
+ "主要发现": {
+  "status": "auto",
+  "items": [
+   {
+    "text": "We found a 15% decline (p<0.01).",
+    "anchor": "P1-2",
+    "page": 1,
+    "section": "## 2 Results"
+   }
+  ]
+ },
+ "局限": {
+  "status": "not_reported",
+  "items": []
+ }
+}

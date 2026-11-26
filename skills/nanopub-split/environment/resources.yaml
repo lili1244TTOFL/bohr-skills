@@ -1,0 +1,16 @@
+# Resource entry point: environment/resources.yaml
+# Bundled files are relative to this directory.
+skill: ../SKILL.md
+version: "1.0.0"
+install: 无需安装；依赖 Python 3.9+ 标准库与 python-docx
+source: 随 Skill 附带，无外部下载
+conditions: 需可写工作目录；输入为 .docx 稿件、原文献表与 .bib 文献库；运行时不联网
+resources:
+  - ../examples/call.md
+  - ../examples/case/case.json
+  - ../examples/case/manuscript.md
+  - ../examples/samples_20.md
+  - ../GITHUB_URL.txt
+  - ../rules/relations.md
+  - ../run.py
+  - ../SKILL.md

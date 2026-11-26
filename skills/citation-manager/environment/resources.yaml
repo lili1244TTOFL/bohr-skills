@@ -1,0 +1,43 @@
+# Resource entry point: environment/resources.yaml
+# Bundled files are relative to this directory.
+skill: ../SKILL.md
+version: "1.0.0"
+install: 无需安装；依赖 Python 3.9+ 标准库与 python-docx
+source: 随 Skill 附带，无外部下载
+conditions: 需可写工作目录；输入为 .docx 稿件、原文献表与 .bib 文献库；运行时不联网
+resources:
+  - ../examples/call.md
+  - ../examples/lib/core.bib
+  - ../examples/lib/sample_refs.bib
+  - ../examples/make_docx.py
+  - ../examples/pass1_out.txt
+  - ../examples/pass3_match.txt
+  - ../examples/refs.txt
+  - ../examples/sample.md
+  - ../prompts/pass1_sentence_triage.md
+  - ../prompts/pass2_library.md
+  - ../prompts/pass3_match.md
+  - ../rules/gbt7714.md
+  - ../rules/glossary_zh_en.tsv
+  - ../rules/paper_sections.md
+  - ../run.py
+  - ../scripts/captions.py
+  - ../scripts/caseinput.py
+  - ../scripts/check_gbt.py
+  - ../scripts/check_pass2.py
+  - ../scripts/check_pass3.py
+  - ../scripts/check_refs.py
+  - ../scripts/docx_io.py
+  - ../scripts/doi_check.py
+  - ../scripts/export.py
+  - ../scripts/ingest_refs.py
+  - ../scripts/insert_refs.py
+  - ../scripts/keywords.py
+  - ../scripts/match_candidates.py
+  - ../scripts/mklib.py
+  - ../scripts/pass1_prep.py
+  - ../scripts/pdftext.py
+  - ../scripts/preview.py
+  - ../scripts/renumber.py
+  - ../scripts/styles.py
+  - ../SKILL.md

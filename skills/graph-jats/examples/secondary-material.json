@@ -1,0 +1,14 @@
+{
+  "source_id": "secondary",
+  "doi": "10.1000/example.secondary",
+  "paragraphs": [
+    {
+      "paragraph_id": "JATS-P-0012",
+      "text": "We evaluate BERT on SST-2 as well, and compare F1 scores across datasets."
+    },
+    {
+      "paragraph_id": "JATS-P-0013",
+      "text": "A graph neural network baseline is used for the retrieval task on MS MARCO."
+    }
+  ]
+}

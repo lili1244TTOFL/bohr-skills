@@ -1,0 +1,14 @@
+{
+  "source_id": "primary",
+  "doi": "10.1000/example.primary",
+  "paragraphs": [
+    {
+      "paragraph_id": "JATS-P-0007",
+      "text": "We fine-tune BERT on SST-2 and report accuracy of 0.91 in our classification experiments."
+    },
+    {
+      "paragraph_id": "JATS-P-0008",
+      "text": "The transformer encoder is trained with a contrastive learning objective on Wikitext."
+    }
+  ]
+}

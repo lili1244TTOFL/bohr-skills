@@ -1,0 +1,14 @@
+P004:S002|lim2010|M|短时睡眠剥夺与认知下降，元分析
+P004:S003|smith2018|H|[1]
+P004:S004|NONE|H|上文[1]已覆盖同一评述
+P004:S005|arnsten2011|H|[2]
+P005:S001|vandongen2003|H|[3]
+P005:S002|lim2010,nback2018,pupil2021|M|[4-6]
+P005:S003|rosenberg1965,wechsler2008|M|[7] 两个量表
+P005:S004|pupil2021|H|[8]
+P006:S003|psychopy2019,nback2018|H|[9] 与 n-back 任务
+P008:S002|smith2018|H|[1]
+P008:S003|arnsten2011|H|[2]
+P008:S004|zhang2019|H|[10]
+P009:S003|slowwave2020|H|[11]
+#MATCH n=13 n_assign=12 n_none=1 n_new=0
