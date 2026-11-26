@@ -1,18 +1,12 @@
-# Resource entry point: environment/resources.yaml
-# Bundled files are relative to this directory.
-skill: ../SKILL.md
-version: "1.0.0"
-install: 无需安装；依赖 Python 3.9+ 标准库与 python-docx
-source: 随 Skill 附带，无外部下载
-conditions: 需可写工作目录；输入为 .docx 稿件、原文献表与 .bib 文献库；运行时不联网
-resources:
-  - ../examples/bilingual.example.md
-  - ../examples/call.md
-  - ../examples/glossary.tsv
-  - ../examples/paper.txt
-  - ../examples/targets.example.txt
-  - ../rules/translate_rules.md
-  - ../run.py
-  - ../scripts/segments.py
-  - ../scripts/verify.py
-  - ../SKILL.md
+﻿version: 2.0.0
+entry: run.py
+install: 无需安装，Python 3.10+ 标准库
+source: 自制，语法依据 Python 官方 re/json/pathlib 文档
+conditions: 需要 Python 3.10+；输入为 UTF-8 文本；术语表用 Markdown 表格，不用 .tsv
+files:
+  - run.py
+  - SKILL.md
+  - examples/call.md
+  - examples/paper.txt
+  - examples/glossary.md
+  - examples/targets.txt

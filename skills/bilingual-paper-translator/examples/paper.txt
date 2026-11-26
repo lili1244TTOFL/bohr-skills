@@ -1,3 +1,5 @@
-Sleep restriction impairs working memory in 60 young adults [1]. We did not observe a recovery after 2 days of sleep restriction (Fig. 2). The effect size was 0.42 (Smith et al., 2018), and 15% of participants showed no decline.
+﻿This study significantly reduced working memory capacity in the sleep-restricted group [1]. The n-back task was employed to assess memory accuracy [2].
 
-Sleep restriction was applied for 7 days with a 5-hour window. Working memory was measured by the n-back task with a load of 2 and 3 items.
+No effect was observed on reaction time [3].
+
+The authors suggest that reduced D1 receptor sensitivity may cause this difference.
