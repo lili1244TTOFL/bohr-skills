@@ -202,3 +202,14 @@ python -c "import json;r=json.load(open('o/result.json',encoding='utf-8'));print
 |-|-|
 | 与现成工具比，边界在哪、做不到什么 | `docs/对比与边界.md` |
 | 每条结论的出处 | `result.json` 里带出处的那几个字段，见上面的输出契约表 |
+
+## 判断层：块归属章节
+
+归到哪一节由调用方模型判；`caption`/`table`/`formula` 不进判断项，按题面「图表与公式不要求理解科学含义」由脚本按阅读顺序定（`exempt` 列明）。
+
+| 判断项 | 填什么 | 由谁核 |
+|-|-|-|
+| 块属于哪一节 | `judgments.json` 的 `section`，取该块候选里的标题 | `run.py`：`in_candidates` |
+| 依据 | `basis`：该块原文的逐字片段 | `run.py`：`basis_verbatim` |
+
+先跑一次出 `--out/block_section_worklist.md` 判断单；模型写 `judgments.json`（缺省读输入目录或 PDF 同目录，也可 `--judgments` 指路径）；再跑一次，`判断层` 落进 `result.json`，全量块→节写 `--out/block_sections.json`。键与填写格式见 `rules/parse_rules.md` §10。没填的块标 `pending` 并记 `gaps`，脚本默认归属只作候选。

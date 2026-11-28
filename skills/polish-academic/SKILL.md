@@ -38,12 +38,18 @@ python run.py --source examples/case_cn/source_cn.md \
 # 4 与基线稿同尺对照
 python run.py --source examples/paper.md --polished examples/polished.md \
   --glossary examples/glossary.md --baseline examples/baseline_weak.md --out out4
+
+# 5 逐句改写判断（模型填 judgments.json，脚本按判断拼改后稿）
+python run.py --source examples/case_cn/source_cn.md \
+  --judgments examples/case_cn/judgments.json \
+  --glossary examples/case_cn/glossary_cn.md --out out5
 ```
 
 | 参数 | 含义 | 缺省行为 |
 |-|-|-|
 | `--source` | 原稿，必填 | 不存在即 `blocked`，退出码 1 |
-| `--polished` | 改后稿 | 不给则跑内置最小词面修复；改了 0 处判 `needs_polish` |
+| `--polished` | 改后稿 | 不给则看 `judgments.json`，再不给则跑内置最小词面修复；改了 0 处判 `needs_polish` |
+| `--judgments` | 逐句改写判断 `judgments.json` | 不给则找原稿同目录的 `judgments.json`（有 `--polished` 时不用它） |
 | `--glossary` | Markdown 两列/三列术语表 | 不给则跳过译名核验并写进 `gaps` |
 | `--baseline` | 基线稿，用同一 `evaluate()` 跑对照 | 不给则 `coverage.md` 里该项记 `missing` |
 | `--style` | `journal` / `dissertation` / `grant` / `review-response` / `abstract` | 读 `case.json`，再缺按文件名与开头推断并记 `gaps` |
@@ -202,3 +208,38 @@ python run.py --source examples/draft_cn.md --out o3             # needs_polish
 |-|-|
 | 与现成工具比，边界在哪、做不到什么 | `docs/对比与边界.md` |
 | 每条结论的出处 | `result.json` 里带出处的那几个字段，见上面的输出契约表 |
+
+## 13 判断层：逐句改写判断
+
+脚本只做四件事：切句、给每句的命中码（D01–D10）、给内置词面规则的建议、事后核验。**这一句改不改、怎么改，由调用方模型判**。内置的 10 条词面规则只是草案，不是结论。
+
+| 判断项 | 填什么 | 由谁核 |
+|-|-|-|
+| 这一句改不改 | `judgments.json` 的 `decision`，取 `改写` / `保留` | `run.py` 核取值是否在这两个里（`in_candidates`） |
+| 改成什么 | `decision=改写` 时给 `text`（改后整句），脚本按它逐句拼出 `polished.md`；`保留` 则原文不动 | `evaluate()` 核六项守恒（数字/单位/引用/图表/公式/否定）、强度（K02/K07）、术语、缩写、最小编辑（M01/M02） |
+| 凭什么 | `basis` 必须是该句原文的逐字片段 | `run.py` 核 `basis_verbatim` |
+
+流程与落点：
+
+1. 先跑一次（不给 `--polished`、不给 `--judgments`），`--out/rewrite_worklist.md` 出判断单：`id`（`S段号-句号`）、句文本、命中码、规则建议。
+2. 模型按单写 `judgments.json`：`{"items":[{"id","decision","text","basis","reason","filled_by"}]}`，`reason` 写判断理由。
+3. 再跑，`run.py` 按判断拼 `polished.md`，写 `判断层`，其余核验一字不改地照跑。
+
+`判断层` 字段：
+
+| 键 | 含义 |
+|-|-|
+| `unit` | 固定 `逐句改写判断` |
+| `n` / `filled` / `pending` | 总句数 / 已判句数 / 未判句数 |
+| `source` | 读的是哪个 `judgments.json`；整篇 `--polished` 时写「--polished 整篇」；都没有写「内置 10 条词面规则只是草案」 |
+| `by_decision` | `改写` / `保留` / `pending` 各几句 |
+| `rules_available` | 内置词面规则条数（当前 10） |
+| `items[]` | `id`、`段`、`句`、`原文`、`候选码`、`规则建议`、`value`、`basis`、`rewrite`、`model_note`、`filled_by`、`status`、`in_candidates`、`basis_verbatim`、`derived` |
+
+三种入口的 `filled` 口径：
+
+- `judgments.json`：逐句判断，`derived=false`。
+- `--polished` 整篇：逐句「改写/保留」由改后稿与原文对齐推得，`derived=true`（改后稿是模型给的，改没改由脚本比出来）。
+- 两者都没有：全部 `pending`，`polished.md` 是内置规则草案或原文回填，`gaps` 记条数，不冒充改写。
+
+`--judgments` 或同目录 `judgments.json` 有一处读不动（坏 JSON、id 不在单内）都不中断主路径：读不动的整份当没给，id 对不上的句子标 `pending`。

@@ -31,6 +31,8 @@ from pathlib import Path
 SRC_EXT = (".pdf", ".txt", ".md", ".tex", ".docx")
 KEEP = ("body", "caption", "table", "reference", "formula")
 CARD_ORDER = ("研究问题", "数据", "方法条件", "主要发现", "结论", "局限")
+KNOW_KINDS = ("term", "variable", "method", "finding", "conclusion", "limitation")
+JUDGMENT_UNIT = "要点分类"
 FLOAT_RE = re.compile(r"^\s*(图|表|Figure|Fig\.?|Table)\s*([0-9]+[A-Za-z]?)")
 VERSION = "2.0.0"
 
@@ -140,6 +142,59 @@ def build_index(notes: dict, case_id: str) -> dict:
             "items": items, "tokens": rev}
 
 
+def notes_judgment(use: dict, status: str, notes_path: Path, parse: dict) -> dict:
+    """判断层：要点分类。
+
+    分类由调用方模型做，落点是 `--notes` 给的 notes.json（卡片六字段 + 知识点的 kind）。
+    没给 --notes 时 notes.json 只是规则草案：全部条目标 pending，不把规则判类当模型结论。
+    """
+    agent = status == "agent"
+    text_all = "\n".join((b.get("text") or "") for pg in parse.get("pages") or []
+                         for b in pg.get("blocks") or [])
+    items: list[dict] = []
+    seen: dict[str, int] = {}
+
+    def row(base: str, source: str, it: dict, candidates: list[str], kind: str) -> None:
+        seen[base] = seen.get(base, 0) + 1
+        quote = (it.get("quote") or it.get("text") or "").strip()
+        items.append({
+            "id": f"{base}#{seen[base]}", "item": JUDGMENT_UNIT, "来源": source,
+            "section": it.get("section"), "page": it.get("page"),
+            "候选": candidates, "规则判类": kind,
+            "value": kind if agent else "pending",
+            "basis": quote[:100],
+            "filled_by": "调用方模型（--notes notes.json）" if agent else "",
+            "status": "filled" if agent else "pending",
+            "in_candidates": (kind in candidates) if agent else None,
+            "basis_verbatim": ((quote in text_all) if quote else None) if agent else None,
+        })
+
+    for field in CARD_ORDER:
+        for it in (((use.get("card") or {}).get(field) or {}).get("items") or []):
+            row(f"{it.get('anchor') or '?'}@card.{field}", f"card.{field}", it,
+                list(CARD_ORDER), field)
+    for it in use.get("knowledge") or []:
+        kind = str(it.get("kind") or "")
+        row(f"{it.get('anchor') or '?'}@knowledge.{kind}", f"knowledge.{kind}", it,
+            list(KNOW_KINDS), kind)
+
+    n = len(items)
+    filled = n if agent else 0
+    return {
+        "unit": JUDGMENT_UNIT,
+        "who_fills": "调用方模型：把要点分到六字段卡片 / 知识点 kind，写 notes.json 后走 --notes",
+        "who_checks": "run.py 核 id 是否可回锚点、value 是否在候选内、basis（quote）是否逐字出现在原文",
+        "source": (str(notes_path) if agent else
+                   "未给 --notes：notes.md 是规则草案，不是模型结论"),
+        "notes_status": "agent" if agent else "pending",
+        "n": n, "filled": filled, "pending": n - filled,
+        "items": items[:300],
+        "by_field": {f: sum(1 for i in items if i["来源"] == f"card.{f}") for f in CARD_ORDER},
+        "by_kind": {k: sum(1 for i in items if i["来源"] == f"knowledge.{k}")
+                    for k in KNOW_KINDS},
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     _utf8()
     ap = argparse.ArgumentParser(description="文献结构化笔记")
@@ -177,6 +232,9 @@ def main(argv: list[str] | None = None) -> int:
                                  "bytes": 0}],
                "change_records": [{"步骤": "0 读输入", "动作": "rglob 源文件", "结果": "未找到",
                                    "脚本": "run.py"}],
+               "判断层": {"unit": JUDGMENT_UNIT, "n": 0, "filled": 0, "pending": 0,
+                        "source": "没有原文，没有可判要点", "notes_status": "none",
+                        "who_fills": "调用方模型", "who_checks": "run.py", "items": []},
                "output_contract": {str(k): {"note": "无产物：找不到原文",
                                             "pointer": ["missing_input.md"]}
                                    for k in contract},
@@ -234,7 +292,9 @@ def main(argv: list[str] | None = None) -> int:
                 if key not in use:
                     gaps.append(f"notes.json 缺 {key}：按自动模式重算该部分后核验")
                     use[key] = auto_notes[key]
-    use.setdefault("meta", {}).update({"version": VERSION, "notes_status": status,
+    # 没给 --notes 时不冒充结论：产物照出（规则草案），notes_status 与 判断层 都标 pending
+    notes_status_out = "agent" if status == "agent" else "pending"
+    use.setdefault("meta", {}).update({"version": VERSION, "notes_status": notes_status_out,
                                        "fields": list(CARD_ORDER),
                                        "thresholds": {"N03_heading_coverage": 0.8}})
 
@@ -253,6 +313,12 @@ def main(argv: list[str] | None = None) -> int:
     if status == "auto":
         gaps.append("笔记由内置规则生成：标题块切节 → 六类字段信号挑句 → 卡片/知识点/冲突；"
                     "quote 与 span 指向原文逐字，未做人工改写")
+
+    # ---------- 判断层：要点分类（模型给 --notes，脚本只核） ----------
+    judgment = notes_judgment(use, status, notes_path, parse)
+    if judgment["pending"]:
+        gaps.append(f"判断层：{judgment['pending']} 条要点分类待模型判"
+                    f"（未给 --notes，notes.md 是规则草案）")
 
     # 图表/公式锚点清单（caption 块本身就是锚点，标签从图注文本里取）
     ids = notes_mod.anchor_index(parse)
@@ -356,8 +422,8 @@ def main(argv: list[str] | None = None) -> int:
         {"步骤": "3 抽取", "动作": "六类字段信号挑「信号所在句」，记 rule/匹配串/span",
          "产出": f"候选条目 {ver['n_items']} 条，知识点 {len(kn_list)} 条，"
                  f"冲突点 {len(use.get('conflicts') or [])} 个", "脚本": "scripts/notes.py"},
-        {"步骤": "4 改写", "动作": "读调用方稿" if status == "agent" else "未给 --notes，用规则抽取版本",
-         "产出": f"notes_status={status}，改写条数 {ver['n_rewritten']}，"
+        {"步骤": "4 改写", "动作": "读调用方稿" if status == "agent" else "未给 --notes：notes.md 只是规则草案",
+         "产出": f"notes_status={notes_status_out}，改写条数 {ver['n_rewritten']}，"
                  f"写明 reason {ver['n_reason']} 条"},
         {"步骤": "5 核验", "动作": "N00–N09 九项判据 + 阈值 N03≥80%",
          "产出": f"未过 {ver['counts'] or '无'}", "脚本": "scripts/verify_notes.py"},
@@ -414,8 +480,8 @@ def main(argv: list[str] | None = None) -> int:
                          "改写条数": ver["n_rewritten"], "写明理由": ver["n_reason"]},
             "未报告与无法判断": [{"字段": f,
                                   "状态": (use.get("card") or {}).get(f, {}).get("status"),
-                                  "交接": [(use.get("card") or {}).get(f, {}).get("handoff") or [{}])[0].get("action"),
-                                           (use.get("card") or {}).get(f, {}).get("handoff") or [{}])[0].get("search_terms")]
+                                  "交接": [(((use.get("card") or {}).get(f, {}) or {}).get("handoff") or [{}])[0].get("action"),
+                                           (((use.get("card") or {}).get(f, {}) or {}).get("handoff") or [{}])[0].get("search_terms")]}
                                  for f in CARD_ORDER
                                  if (use.get("card") or {}).get(f, {}).get("status")
                                  in ("not_reported", "undetermined")],
@@ -424,7 +490,7 @@ def main(argv: list[str] | None = None) -> int:
             "缺口": gaps,
         },
         "运行状态": {
-            "status": result_status, "notes_status": status,
+            "status": result_status, "notes_status": notes_status_out,
             "检查": {k: v["ok"] for k, v in checks.items()},
             "未过检查": [k for k, v in checks.items() if not v["ok"]],
             "耗时秒": round(time.time() - t0, 2),
@@ -471,7 +537,8 @@ def main(argv: list[str] | None = None) -> int:
     }
     result = {"case_id": case_id,
               "status": result_status,
-              "notes_status": status,
+              "notes_status": notes_status_out,
+              "判断层": judgment,
               "sources": {"input": str(case_dir), "source_file": str(src),
                           "engine": engine, "case_json": bool(contract),
                           "parser": "scripts/pdfparse.py", "version": VERSION},
@@ -510,6 +577,9 @@ def main(argv: list[str] | None = None) -> int:
     print(json.dumps({"ok": True, "status": result_status, "sections": result["stats"]["sections"],
                       "knowledge": result["stats"]["knowledge"],
                       "quotes_verbatim": result["stats"]["quotes_verbatim"],
+                      "notes_status": notes_status_out,
+                      "judgment": {"unit": JUDGMENT_UNIT, "filled": judgment["filled"],
+                                   "n": judgment["n"]},
                       "uncertainty": len(uncertainty),
                       "gaps": gaps}, ensure_ascii=False))
     return 0

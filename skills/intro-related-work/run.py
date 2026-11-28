@@ -560,6 +560,35 @@ def main(argv=None) -> int:
                                 f"悬空指向 {_audit['n_x02']} 处，见 result.json 引用一致性")
                 _gw = _load("group_worklist")
                 _wl = _gw.build(_src.read_text(encoding="utf-8-sig", errors="replace"))
+                # 判断层：读调用方填好的 judgments.json；没填就标 pending，不替它下结论
+                _jf = Path(root) / "judgments.json"
+                _items = _wl["items"]
+                if _jf.exists():
+                    _filled = {x["id"]: x for x in
+                               (json.loads(_jf.read_text(encoding="utf-8-sig")).get("items") or [])
+                               if x.get("id")}
+                else:
+                    _filled = {}
+                _rows, _np = [], 0
+                for _it in _items:
+                    _j = ((_filled.get(_it["id"]) or {}).get("judgment") or {})
+                    if not _j.get("group"):
+                        _np += 1
+                        _rows.append({"id": _it["id"], "value": None,
+                                      "basis": None, "filled_by": None,
+                                      "status": "pending"})
+                    else:
+                        _rows.append({"id": _it["id"], "value": _j.get("group"),
+                                      "basis": _j.get("rationale"),
+                                      "filled_by": _j.get("filled_by"),
+                                      "status": "filled"})
+                result["判断层"] = {
+                    "item": "相关工作按方法路线分组",
+                    "n": len(_rows), "filled": len(_rows) - _np, "pending": _np,
+                    "rows": _rows,
+                    "note": "group/rationale 由调用方模型填，脚本只核引用键与依据回指"}
+                if _np:
+                    gaps.append(f"判断层：{_np} 条待调用方模型判断（起因为材料未给分组依据或未提供 judgments.json）")
                 result["分组工作单"] = {
                     "n": _wl["n"], "how": _wl["how"],
                     "verify_after_fill": _wl["verify_after_fill"],

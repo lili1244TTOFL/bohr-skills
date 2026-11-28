@@ -46,16 +46,16 @@ python run.py --docx manuscript.docx --refs refs.txt --lib library.bib \
 
 `--lib` 可省：只给 `--refs` 时先落一个空库，第 2 步把稿件原有文献表并进去当库用（`gaps` 写明「库内 N 条均来自稿件文献表」）。术语表 `rules/glossary_zh_en.md` 解析到 0 条时同样记 `gaps`，不静默失效。
 
-本 Skill 有两步本来靠模型判断（句子分流、句—库匹配）。**不给模型输出也不会停**：两步都有内置规则替身，先把成品跑出来，`gaps` 记明哪一步是规则做的。要更高精度时再按下面循环交模型输出：
+本 Skill 有两步本来靠模型判断（句子分流、句—库匹配）。**不给模型输出也不会停**：句子分流有内置规则替身；句—库匹配只给候选，不替模型挑（选定见 §13 判断层）。`gaps` 记明哪一步是规则做的、哪几句待判。要更高精度时再按下面循环交模型输出：
 
 ```text
 1. run.py --input /input                                 → 得到 work/pass1_input.txt
 2. 按 prompts/pass1_sentence_triage.md 逐句分流，写 work/pass1_out.txt
    每行：uid|类别|理由码|句首
 3. run.py --input /input --pass1 work/pass1_out.txt      → 得到 work/match_input.tsv
-4. 按 prompts/pass3_match.md 逐句匹配，写 work/pass3_match.txt
-   每行：uid|编号|置信度|依据
-5. run.py --input /input --pass1 … --match …             → 产出成品
+4. 两种选法任选：写 judgments.json（uid→ids），或按 prompts/pass3_match.md 写 pass3 文件
+   5a. run.py --input /input --pass1 … --judgments judgments.json   → 产出成品
+   5b. run.py --input /input --pass1 … --match work/pass3_match.txt → 产出成品
 6. 第 2/4 步输出不合规时按校验报码重做，最多 3 轮
 ```
 
@@ -64,7 +64,7 @@ python run.py --docx manuscript.docx --refs refs.txt --lib library.bib \
 | 缺什么 | 替身怎么算 | 产物 |
 |-|-|-|
 | `--pass1` 句子分流 | 已有 `[n]` 标记→`CITE`；方法节→`OWN`（伦理资助→`STRUCT`）；结果节→`OWN`；他人研究线索→`CITE`；其余→`AMBIG` | `pass1.txt` |
-| `--match` 句—库匹配 | 候选分排序：`MARK` 优先，其次首位语义分，0.30/0.18 分 `H`/`M`；无候选→`NONE` | `pass3.txt` |
+| `--match` / `--judgments` 句—库匹配 | **只算候选**（`MARK` 映射与语义分），不选：已有 `[n]` 照映射，其余记 `NONE` + `pending`，候选与分数写进 `out/match_worklist.md` | `pass3_auto.txt`（含 pending 标记） |
 
 ## 4 流程
 
@@ -243,3 +243,30 @@ python -c "import json;r=json.load(open('output/result.json'));print(r['status']
 |-|-|
 | 与现成工具比，边界在哪、做不到什么 | `docs/对比与边界.md` |
 | 每条结论的出处 | `result.json` 里带出处的那几个字段，见上面的输出契约表 |
+
+## 13 判断层：论断配文献
+
+脚本只算候选与编号映射，**「这句由哪篇文献支撑」由调用方模型选**。改前这里直接取词面/语义分首位，等于用字面重合替模型下结论；现在首位只作候选列出。
+
+| 判断项 | 填什么 | 由谁核 |
+|-|-|-|
+| 这句论断配哪篇文献 | `judgments.json` 的 `ids`（0 篇以上，取自该句候选；`[]` 表示该句不需要引用）；或按 `prompts/pass3_match.md` 写 pass3 文件走 `--match` | `run.py` 核 `ids` 是否在该句候选或库内（`in_candidates`）、`basis` 是否该句原文子串（`basis_verbatim`）；再由 `verify_sources.py` 核证据强弱、`check_pass3.py` 核 CITE 句不漏不重 |
+| 凭什么配这篇 | `basis`：该句原文的逐字片段（`--match` 走文件自带依据词，不核逐字） | 同上 |
+
+流程与落点：
+
+1. 先跑一次（不给 `--match`、不给 `--judgments`），`--out/match_worklist.md` 出判断单：`uid`、章节、原句、候选（id / 分 / 命中词，另有低分候选条数）。
+2. 模型按单写 `judgments.json`（缺省读稿件同目录那份，也可 `--judgments` 指路径）：`{"items":[{"uid","ids","basis","reason","filled_by"}]}`。
+3. 再跑，`run.py` 按判断配文献、重排编号、插入 docx，其余核验照跑。
+
+`判断层` 字段：
+
+| 键 | 含义 |
+|-|-|
+| `unit` | 固定 `论断配文献` |
+| `n` / `filled` / `pending` | 需要模型选的句数（不含已有 `[n]` 的句）/ 已选 / 未选 |
+| `source` | 读的是哪个 `judgments.json` 或 `--match` 文件；都没有写「只给候选，不替模型选」 |
+| `exempt` | 稿件原有 `[n]` 已映射到库条目的句子（编号映射，不是选文献判断），列出来免得被当成漏判 |
+| `items[]` | `id`（=uid）、`section`、`原文`、`候选`（前 3）、`候选全量`、`value`（选中的 id 或 `pending`）、`basis`、`basis_source`、`filled_by`、`status`、`in_candidates`、`basis_verbatim`、`model_note` |
+
+没选中的句子在 pass3 里记 `NONE`，`gaps` 记条数；成品里该句不挂引用，不按词面重合补一篇。

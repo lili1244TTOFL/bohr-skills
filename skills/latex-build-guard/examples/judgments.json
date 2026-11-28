@@ -1,0 +1,62 @@
+{
+  "case_id": "demo-latex-001",
+  "unit": "缺陷根因归类",
+  "filled_by": "deepseek-v4-flash（调用方模型，按 judgment_worksheet.md 逐条判）",
+  "source": "本文件由模型写；run.py 只读不猜",
+  "items": [
+    {
+      "id": "T10@paper.tex:9#1",
+      "decision": "章节层级",
+      "basis": "子章节 \\subsection 出现在 \\section 之前",
+      "filled_by": "deepseek-v4-flash"
+    },
+    {
+      "id": "T02@paper.tex:10#1",
+      "decision": "引用断链",
+      "basis": "引用不存在：fig:missing",
+      "filled_by": "deepseek-v4-flash"
+    },
+    {
+      "id": "T06@paper.tex:11#1",
+      "decision": "浮动体不合规",
+      "basis": "figure 缺 caption",
+      "filled_by": "deepseek-v4-flash"
+    },
+    {
+      "id": "T09@paper.tex:12#1",
+      "decision": "素材缺失",
+      "basis": "\\includegraphics{missing.png}",
+      "filled_by": "deepseek-v4-flash"
+    },
+    {
+      "id": "T01@paper.tex:15#1",
+      "decision": "标签冲突",
+      "basis": "label 重复：fig:one（首次在 paper.tex:14）",
+      "filled_by": "deepseek-v4-flash"
+    },
+    {
+      "id": "T02@project/sections/intro.tex:3#1",
+      "decision": "引用断链",
+      "basis": "Table~\\ref{tab:main}",
+      "filled_by": "deepseek-v4-flash"
+    },
+    {
+      "id": "T02@project/sections/intro.tex:3#2",
+      "decision": "引用断链",
+      "basis": "Figure~\\ref{fig:pipeline}",
+      "filled_by": "deepseek-v4-flash"
+    },
+    {
+      "id": "T04@project/sections/intro.tex:4#1",
+      "decision": "文献缺条",
+      "basis": "cite 键不在 bib：ghost2021",
+      "filled_by": "deepseek-v4-flash"
+    },
+    {
+      "id": "T05@refs.bib:11#1",
+      "decision": "冗余未引用",
+      "basis": "bib 条目未被引用：unused2020",
+      "filled_by": "deepseek-v4-flash"
+    }
+  ]
+}

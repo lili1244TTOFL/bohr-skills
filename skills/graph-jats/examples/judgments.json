@@ -1,0 +1,39 @@
+{
+ "items": [
+  {
+   "id": "M-primary-secondary-01",
+   "decision": "keep_separate",
+   "basis": "We evaluate BERT on SST-2 as well, and report F1 scores across datasets.",
+   "filled_by": "ds-base",
+   "note": "decision 填 merge 或 keep_separate；basis 写原文短句"
+  },
+  {
+   "id": "M-primary-secondary-02",
+   "decision": "keep_separate",
+   "basis": "Our annotated corpus contains 12 000 abstracts from computational linguistics.",
+   "filled_by": "ds-base",
+   "note": "decision 填 merge 或 keep_separate；basis 写原文短句"
+  },
+  {
+   "id": "M-primary-secondary-03",
+   "decision": "merge",
+   "basis": "We fine-tune BERT on SST-2 and report accuracy of 0.91 in our classification experiments.",
+   "filled_by": "ds-base",
+   "note": "decision 填 merge 或 keep_separate；basis 写原文短句"
+  },
+  {
+   "id": "M-primary-secondary-04",
+   "decision": "merge",
+   "basis": "Our ablation confirms that BERT benefits from contrastive learning on SST-2.",
+   "filled_by": "ds-base",
+   "note": "decision 填 merge 或 keep_separate；basis 写原文短句"
+  },
+  {
+   "id": "M-primary-secondary-05",
+   "decision": "merge",
+   "basis": "We find that attention accounts for most of the gain on SST-2 classification.",
+   "filled_by": "ds-base",
+   "note": "decision 填 merge 或 keep_separate；basis 写原文短句"
+  }
+ ]
+}

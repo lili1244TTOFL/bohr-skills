@@ -242,15 +242,30 @@ python run.py --input examples --out output --work work
 | 与现成工具比，边界在哪、做不到什么 | `docs/对比与边界.md` |
 | 每条结论的出处 | `result.json` 里带出处的那几个字段，见上面的输出契约表 |
 
-## 判断层：哪些交给调用方模型
+## 判断层：缺陷根因归类
 
-脚本准备候选与锚点，判断由调用方模型做，脚本再核结果。本节说明本包的判断项。
+脚本出候选与原文锚点，模型判，脚本再核。本节说明本包的判断项。
 
-| 判断项 | 口径 |
+| 判断项 | 填什么 | 由谁核 |
+|-|-|-|
+| 每条缺陷属于哪类根因 | 从该条候选里选 1 个：标签冲突 / 引用断链 / 文献缺条 / 浮动体不合规 / 语法不闭合 / 素材缺失 / 章节层级 / 表格结构 / 模板缺项 / 冗余未引用 / 误报计数 | `run.py` 核 `value` 是否落在 `candidates` 内（`in_candidates`） |
+| 这条判断的依据 | 该条 `snippet`（原文那一行）或 `detail` 里的**原文子串**，不改写 | `run.py` 核 `basis` 是否为原文子串（`basis_verbatim`） |
+
+流程与落点：
+
+1. 脚本先跑静态检查，把每条缺陷写成 `--out/judgment_worksheet.md`：稳定 id（`码@文件:行#序号`）、现象、原文、候选根因。
+2. 模型按工作单填 `<输入目录>/judgments.json`：`{"items":[{"id","decision","basis","filled_by"}]}`，id 必须来自工作单。
+3. 再跑同一条命令，`run.py` 读 `judgments.json` 并写进 `result.json` 的 `判断层`。
+
+`判断层` 字段：
+
+| 键 | 含义 |
 |-|-|
-| 这处报错属于哪类根因 | label 冲突/引用缺失/宏缺包/模板必填项/图片缺失 |
-| 这处该怎么改 | 六类确定性补丁之外的结构改动 |
+| `unit` | 固定 `缺陷根因归类` |
+| `n` / `filled` / `pending` | 待判条数 / 已填条数 / 未填条数 |
+| `source` | 读的是哪个 `judgments.json`，读不到就写缺 |
+| `who_fills` / `who_checks` | 谁填（调用方模型）、谁核（`run.py`） |
+| `items[]` | 每条含 `id`、`item`、`value`、`basis`、`filled_by`、`candidates`、`in_candidates`、`basis_verbatim`、`status` |
 
-脚本跑检查、给带行号的缺陷清单；模型判根因并给改法；脚本应用补丁并重编译核验。
-
-判断结果写进 `result.json` 的 `判断层` 字段：每条含 `item`（判断项）、`value`（结论）、`basis`（依据，必须是原句子串）、`filled_by`（模型名或 caller）。未填写的项标 `pending`，不自行补结论。
+没填的条目 `value` 写 `pending`、`status` 写 `pending`，进 `gaps` 记明条数；脚本不替模型下结论，也不因 pending 改 `status`。
+`judgments.json` 缺、坏、或 id 不在工作单内都不中断主路径：缺的标 pending，多余的 id 记进 `skipped_ids`。

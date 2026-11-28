@@ -66,6 +66,11 @@ LONG_CHARS = 80      # 中文长句阈值（字）
 REWRITE_RATIO = 0.60  # 低于此相似度视为疑似整句重写
 CHANGE_RATIO = 0.995  # 相似度低于此值视为该句有改动
 
+# 判断层：逐句改写判断。脚本只出候选句、候选码与词面建议，改不改、怎么改由调用方模型判。
+# 入口是 judgments.json（逐句），或 --polished 整篇改稿（逐句状态由对齐推得）。
+JUDGMENT_UNIT = "逐句改写判断"
+SENTENCE_DECISIONS = ("改写", "保留")
+
 MATH_PATTERNS = (
     r"\$\$.+?\$\$",
     r"(?<![\$\\])\$(?!\$)[^$\n]+?\$",
@@ -910,6 +915,9 @@ def write_blocked(out: Path, case_id: str, why: str) -> int:
            "事实与来源映射": {"条数": 0, "逐条": []},
            "版本与边界": {"gaps": [why], "problems": [], "人工确认项": []},
            "gaps": [why], "uncertainty": ["无输入：未做任何检测"],
+           "判断层": {"unit": JUDGMENT_UNIT, "n": 0, "filled": 0, "pending": 0,
+                    "source": "原稿不存在，没有可判句子",
+                    "who_fills": "调用方模型", "who_checks": "run.py", "items": []},
            "deliverables": ["result.json"]}
     (out / "result.json").write_text(json.dumps(res, ensure_ascii=False, indent=1),
                                      encoding="utf-8")
@@ -923,6 +931,8 @@ def main(argv=None) -> int:
     ap.add_argument("--polished", default=None, help="改后稿；不给则做最小词面修复")
     ap.add_argument("--glossary", default=None, help="术语表（Markdown 两列/三列表）")
     ap.add_argument("--baseline", default=None, help="基线改后稿：用同一规则跑对照")
+    ap.add_argument("--judgments", default=None,
+                    help="逐句改写判断（judgments.json）；不给则找原稿同目录的 judgments.json")
     ap.add_argument("--style", default=None,
                     help="目标文体：journal|dissertation|grant|review-response|abstract")
     ap.add_argument("--out", default="output", help="产物目录")
@@ -959,7 +969,19 @@ def main(argv=None) -> int:
     gaps, applied = [], []
 
     pol_path = Path(a.polished) if a.polished else None
-    if pol_path and pol_path.exists():
+    # 判断入口优先级：显式 --judgments > 同目录 judgments.json（无 --polished 时）> --polished > 内置草案
+    jpath = Path(a.judgments) if a.judgments else (src_p.parent / "judgments.json")
+    use_j = bool(a.judgments) or not (pol_path and pol_path.exists())
+    decisions, dec_src = load_judgments(jpath if (use_j and jpath.exists()) else None)
+    if decisions:
+        # 逐句判断优先：按 decision=改写 的句子拼改后稿，其余原样
+        pol, n_repl = assemble_from_judgments(src, sents_src, decisions)
+        pol_enc = src_enc
+        pol_from = "逐句判断（judgments.json）"
+        applied = []
+        gaps.append(f"改后稿由 judgments.json 逐句拼出：{n_repl} 句替换，"
+                    f"{len(decisions)} 条判断（见 判断层）")
+    elif pol_path and pol_path.exists():
         pol, pol_enc = read_text(pol_path)
         pol_from = "外部提供"
     else:
@@ -1009,6 +1031,13 @@ def main(argv=None) -> int:
         "style": style, "style_src": style_src, "baseline": a.baseline,
     }
     coverage = coverage_table(ctx)
+
+    # ---------------- 判断层：逐句改写判断（模型填 judgments.json 或交整篇改稿） ----------------
+    judgment = judgment_layer(case_id, sents_src, issues, applied, decisions, dec_src,
+                              pol_from, ev["edits"], out, jpath, REWRITE)
+    if judgment["pending"]:
+        gaps.append(f"判断层：{judgment['pending']} 句改写判断待模型判"
+                    f"（未给 judgments.json；内置词面规则只是草案）")
 
     # ---------------- 基线对照：同一 evaluate、同一术语表、同一阈值 ----------------
     cmp_rows, cmp_verdict = [], None
@@ -1104,11 +1133,13 @@ def main(argv=None) -> int:
         "目标产物": {
             "path": "polished.md",
             "字符数": len(pol), "句数": len(ev["sents_out"]), "段落数": len(paragraphs(pol)),
-            "改后稿已给": pol_from == "外部提供",
+            "改后稿已给": pol_from in ("外部提供", "逐句判断（judgments.json）"),
             "改动句数": ev["changed_sentences"],
             "内容": ("改后全文" if pol_from == "外部提供" else
-                     ("改后全文（内置词面规则）" if pol_from == "内置最小词面规则"
-                      else "未改写，回填原文")),
+                     ("改后全文（judgments.json 逐句拼出）"
+                      if pol_from == "逐句判断（judgments.json）" else
+                      ("改后全文（内置词面规则）" if pol_from == "内置最小词面规则"
+                       else "未改写，回填原文"))),
         },
         "事实与来源映射": {
             "证据单位": "code + span（问题码 + 原文片段）+ 段号/句号 + 句文本",
@@ -1163,6 +1194,7 @@ def main(argv=None) -> int:
         "gaps": gaps,
         "uncertainty": gaps + [m["项"] for m in must_confirm[:10]],
         "deliverables": deliverables,
+        "判断层": judgment,
         "output_contract": contract,
     }
     for k in contract:
@@ -1176,8 +1208,153 @@ def main(argv=None) -> int:
     print(json.dumps({"ok": True, "status": status, "issues": len(issues),
                       "edits": len(ev["edits"]), "problems": len(problems),
                       "confirm": len(must_confirm),
+                      "judgment": {"unit": JUDGMENT_UNIT, "filled": judgment["filled"],
+                                   "n": judgment["n"]},
                       "deliverables": len(deliverables)}, ensure_ascii=False))
     return 0
+
+
+# ============================ 判断层：逐句改写 ============================
+def load_judgments(p: Path | None) -> tuple:
+    """读 judgments.json：items[{id, decision, text, basis, filled_by}]。读不到返回空表。"""
+    if not p or not p.exists():
+        return {}, f"未找到 {p}" if p else "未提供 judgments.json"
+    try:
+        obj = json.loads(read_text(p)[0])
+        raw = obj.get("items") if isinstance(obj, dict) else obj
+        got = {}
+        for it in (raw or []):
+            if isinstance(it, dict) and it.get("id"):
+                got[str(it["id"])] = it
+        return got, f"{p}（{len(got)} 条）"
+    except Exception as e:
+        return {}, f"{p} 读不动：{type(e).__name__}: {e}"
+
+
+def sent_id(s: dict) -> str:
+    return f"S{s['para']:02d}-{s['sent']:02d}"
+
+
+def assemble_from_judgments(src: str, sents: list, decisions: dict) -> tuple:
+    """按逐句判断拼改后稿：decision=改写且有 text 的句子替换原句，其余原样保留。"""
+    repl = []
+    for s in sents:
+        it = decisions.get(sent_id(s)) or {}
+        if str(it.get("decision") or "") != "改写":
+            continue
+        new = str(it.get("text") or "").strip()
+        if not new or new == s["text"]:
+            continue
+        repl.append((s["start"], s["end"], new))
+    pol = src
+    for a, b, new in sorted(repl, reverse=True):
+        pol = pol[:a] + new + pol[b:]
+    return pol, len(repl)
+
+
+def rewrite_worklist(case_id: str, sents: list, issues: list, applied: list,
+                     rules: list, jpath: Path) -> str:
+    by_sent: dict[str, list] = {}
+    for it in issues:
+        by_sent.setdefault(f"S{it['para']:02d}-{it['sent']:02d}", []).append(it)
+    L = [f"# 判断单：{JUDGMENT_UNIT}", "",
+         f"- case_id：`{case_id}`；待判 {len(sents)} 句",
+         f"- 填到：`{jpath}`：`{{\"items\":[{{\"id\",\"decision\",\"text\",\"basis\",\"filled_by\"}}]}}`",
+         "- `decision` 取 `改写` 或 `保留`；`改写` 必须给 `text`（改后整句）",
+         "- `basis` 必须是该句原文的逐字片段（脚本核 `basis_verbatim`）",
+         "- 不填的句子由 `run.py` 标 `pending`，内置词面规则只算草案，不代填结论", "",
+         "| id | 句 | 命中码 | 规则建议 |", "|-|-|-|-|"]
+    for s in sents:
+        sid = sent_id(s)
+        codes = "、".join(f"{i['code']} {i['name']}" for i in by_sent.get(sid, [])) or "无"
+        sug = "；".join(f"{a['pattern']}→{a['replacement'] or '（删）'}" for a in applied
+                       if a.get("段") == s["para"] and a.get("句") == s["sent"]) or "—"
+        cell = lambda x: str(x).replace("|", "\\|")
+        L.append(f"| `{sid}` | {cell(s['text'][:80])} | {cell(codes)} | {cell(sug)} |")
+    if rules:
+        L += ["", "## 内置词面规则（10 条，草案，不是结论）", ""]
+        L += [f"- `{p}` → `{r or '（删）'}`" for p, r in rules]
+    return "\n".join(L) + "\n"
+
+
+def judgment_layer(case_id: str, sents: list, issues: list, applied: list,
+                   decisions: dict, dec_src: str, pol_from: str,
+                   edits: list, out: Path, jpath: Path, rules: list) -> dict:
+    """判断层：逐句改写判断。
+
+    结论只有两个来源：调用方写的 judgments.json，或调用方交的整篇 --polished
+    （逐句「改写/保留」由改后稿对齐推得，标 derived=true）。两样都没有就 pending。
+    """
+    by_sent: dict[str, list] = {}
+    for it in issues:
+        by_sent.setdefault(f"S{it['para']:02d}-{it['sent']:02d}", []).append(it)
+    changed = {(e["para"], e["sent"]) for e in edits}
+    derived = (not decisions) and pol_from == "外部提供"
+    rows = []
+    filled = 0
+    for s in sents:
+        sid = sent_id(s)
+        codes = [f"{i['code']} {i['name']}" for i in by_sent.get(sid, [])]
+        got = decisions.get(sid) or {}
+        val = str(got.get("decision") or "").strip()
+        src = "judgments.json"
+        rewrite, applied_ok = "", None
+        if val not in SENTENCE_DECISIONS:
+            val = ""
+        if val:
+            basis = str(got.get("basis") or "")
+            filled_by = str(got.get("filled_by") or "caller")
+            if val == "改写":
+                rewrite = str(got.get("text") or "")[:400]
+            applied_ok = val
+        elif derived:
+            val = "改写" if (s["para"], s["sent"]) in changed else "保留"
+            src = "--polished 逐句对齐"
+            basis = s["text"][:60]
+            filled_by = "调用方模型（--polished 整篇）"
+            applied_ok = val
+        else:
+            basis = ""
+            filled_by = ""
+        if val:
+            filled += 1
+        rows.append({
+            "id": sid, "item": JUDGMENT_UNIT,
+            "段": s["para"], "句": s["sent"],
+            "原文": s["text"][:200],
+            "候选码": codes,
+            "规则建议": [a for a in applied
+                         if a.get("段") == s["para"] and a.get("句") == s["sent"]],
+            "value": val or "pending",
+            "basis": basis[:200],
+            "filled_by": filled_by,
+            "status": "filled" if val else "pending",
+            "source": src if val else "",
+            "rewrite": rewrite,
+            "model_note": str(got.get("reason") or "")[:300],
+            "in_candidates": (val in SENTENCE_DECISIONS) if val else None,
+            "basis_verbatim": (basis.strip() in s["text"]) if (val and basis) else None,
+            "derived": derived if val else None,
+        })
+    n = len(rows)
+    try:
+        (Path(out) / "rewrite_worklist.md").write_text(
+            rewrite_worklist(case_id, sents, issues, applied, rules, jpath),
+            encoding="utf-8")
+    except Exception:
+        pass
+    return {
+        "unit": JUDGMENT_UNIT,
+        "who_fills": "调用方模型：按 rewrite_worklist.md 逐句判，写 judgments.json；或交整篇 --polished",
+        "who_checks": "run.py 核 decision 取值、改写句非空、basis 是否原句原文子串；再由 evaluate() 核守恒与术语",
+        "source": dec_src if decisions else (
+            f"--polished 整篇（{pol_from}）" if derived else "未填：内置 10 条词面规则只是草案"),
+        "n": n, "filled": filled, "pending": n - filled,
+        "by_decision": {k: sum(1 for r in rows if r["value"] == k)
+                        for k in (*SENTENCE_DECISIONS, "pending")},
+        "rules_available": len(rules),
+        "items": rows[:300],
+    }
 
 
 # ============================ 渲染 ============================

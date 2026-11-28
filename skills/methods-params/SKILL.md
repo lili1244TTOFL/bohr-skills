@@ -120,7 +120,8 @@ python run.py --input examples/case --work work --out output
 
 ## 10 预算
 
-零模型请求：抽取、对齐、渲染全部是本地正则与字符串比较，不联网、无外部依赖。
+脚本本身零模型请求：抽取、对齐、渲染全部是本地正则与字符串比较，不联网、无外部依赖。
+唯一一次模型调用在脚本之外：调用方模型读 `element_worksheet.md` 填 `judgments.json`（六类要素归类）。
 材料文件数线性增长；10 个文件内为毫秒级。
 
 ## 题目对齐（写作09）
@@ -151,15 +152,33 @@ python run.py --input examples/case --work work --out output
 | 与现成工具比，边界在哪、做不到什么 | `docs/对比与边界.md` |
 | 每条结论的出处 | `result.json` 里带出处的那几个字段，见上面的输出契约表 |
 
-## 判断层：哪些交给调用方模型
+## 判断层：六类要素归类
 
-脚本准备候选与锚点，判断由调用方模型做，脚本再核结果。本节说明本包的判断项。
+脚本出候选与原文锚点，模型判，脚本再核。本节说明本包的判断项。
 
-| 判断项 | 口径 |
+| 判断项 | 填什么 | 由谁核 |
+|-|-|-|
+| 这条抽出来的要素属于六类里的哪一类 | 从该条候选里选 1 个：`参数` / `实验设置` / `数据集` / `对照` / `复现`（步骤由 `extract_steps()` 另出一节） | `run.py` 核 `decision` 是否落在该条候选内（`in_candidates`） |
+| 凭什么这么归 | 该条证据行（`文件:行` 那一行）里的**原文子串**，不改写 | `run.py` 核 `basis` 是否为证据行原文子串（`basis_verbatim`） |
+
+流程与落点：
+
+1. 规则表只记"这一条可能属于哪几类"（`要素候选`）与规则默认类（`规则判类`），`要素` 一栏留空。
+2. 抽完先跑一遍，`--out/element_worksheet.md` 出判断单：`id`（`名称@文件:行#序号`）、取值、证据行、候选。
+3. 模型按单填 `<输入目录>/judgments.json`：`{"items":[{"id","decision","basis","filled_by"}]}`，id 必须来自判断单。
+4. 再跑同一条命令，`run.py` 读 `judgments.json`，把结论写进 `result.json` 的 `判断层`，并用它算六要素覆盖、章节分节与 `params.tsv`。
+
+`判断层` 字段：
+
+| 键 | 含义 |
 |-|-|
-| 哪句属哪类要素 | 六类：步骤/设置/参数/数据/对照/复现与限制 |
-| 这段步骤的可读表述 | 把日志与代码转成一句话能读的步骤 |
+| `unit` | 固定 `六类要素归类` |
+| `n` / `filled` / `pending` | 待判条数 / 已填条数 / 未填条数 |
+| `source` | 读的是哪个 `judgments.json`，读不到就写缺 |
+| `who_fills` / `who_checks` | 谁填（调用方模型）、谁核（`run.py`） |
+| `items[]` | 每条含 `id`、`item`、`名称`、`对象`、`值`、`证据`、`候选`、`规则判类`、`value`、`basis`、`filled_by`、`status`、`in_candidates`、`basis_verbatim` |
+| `exempt` | 不经正则判类的条目：`依赖清单`（文件名判据）、`schema.json` 并入的键（调用方已给类），列出来免得被当成漏判 |
 
-脚本从配置与日志取候选句并带文件行号；模型判类并写成句；脚本核每个数值都有来源行。
-
-判断结果写进 `result.json` 的 `判断层` 字段：每条含 `item`（判断项）、`value`（结论）、`basis`（依据，必须是原句子串）、`filled_by`（模型名或 caller）。未填写的项标 `pending`，不自行补结论。
+没填的条目 `value` 写 `待判`、`status` 写 `pending`：不计入六要素覆盖，`gaps` 记明条数，**不回落成规则默认类**。
+`judgments.json` 缺、坏、id 对不上都不中断主路径：缺的标 pending，多余的 id 不进 items，`skipped_ids` 见代码。
+`judgments.json` 与 `case.json`、`task.md` 一样不进材料抽取桶。

@@ -1,0 +1,13 @@
+{
+ "items": [
+  {
+   "id": "S01",
+   "judgment": {
+    "group": "problem-setting",
+    "rationale": "未解决的是跨域迁移下的稳定性",
+    "cite": "chen2019",
+    "filled_by": "ds-base"
+   }
+  }
+ ]
+}

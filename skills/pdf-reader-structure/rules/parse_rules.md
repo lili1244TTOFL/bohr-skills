@@ -100,3 +100,19 @@ References 等）记 1 级；其余 2 级。
 | 缺字比例 | U+FFFD、`□` 占比 > 2% | `gaps` 记一条 |
 | 无文字层 | 该页无字符块且无表格 | `gaps` 记页号 |
 | 页覆盖 | 解析页数 < 总页数 | `checks["页覆盖"]` 置 false |
+
+## 10. 判断层：块归属章节（由调用方模型判）
+
+脚本只给候选：阅读顺序上最近的标题、下一个标题、前置部分。归到哪一节是模型的事。
+
+| 判断层键 | 含义 |
+|-|-|
+| `unit` | 固定 `块归属章节` |
+| `n` / `filled` / `pending` | 待判块数（不含图表/公式）/ 已判 / 未判 |
+| `source` | 读的是哪个 `judgments.json`；没填写「只给候选与脚本默认归属」 |
+| `exempt` | `caption` / `table` / `formula` 块：题面不要求理解科学含义，按阅读顺序由脚本定 |
+| `items[]` | `id`（`P<页>-<序>`）、`page`、`role`、`原文`、`候选`、`脚本归属`、`value`、`basis`、`filled_by`、`status`、`in_candidates`、`basis_verbatim` |
+| `mapping` | 指向 `block_sections.json`：全量块→节 |
+
+填写格式：`{"items":[{"id","section","basis","filled_by"}]}`，`section` 必须取自该块候选，`basis` 必须是该块原文的子串。
+判断单：`--out/block_section_worklist.md`。没填的块 `value=pending`，`gaps` 记条数。

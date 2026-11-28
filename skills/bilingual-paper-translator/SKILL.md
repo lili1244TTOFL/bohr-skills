@@ -155,15 +155,24 @@ python run.py --input examples/defects --work w4 --out o4   # partial：Q01–Q0
 | 与现成工具比，边界在哪、做不到什么 | `docs/对比与边界.md` |
 | 每条结论的出处 | `result.json` 里带出处的那几个字段，见上面的输出契约表 |
 
-## 判断层：哪些交给调用方模型
+## 判断层：逐段翻译与术语同一
 
-脚本准备候选与锚点，判断由调用方模型做，脚本再核结果。本节说明本包的判断项。
+脚本切段、锁术语、数守恒；判断由调用方模型做，脚本再核结果。本节说明本包的判断项。
 
-| 判断项 | 口径 |
+| 判断项 | 填什么（落到哪个文件） | 由谁核 |
+|-|-|-|
+| 每一段怎么译 | 译文写 `targets.txt`，每段前加 `### S001` 段号标记；段号取 `translation_brief.md` 里的 `seg_id` | `run.py`：段号能配上、译文非空、与原文不同形（`residue`） |
+| 同一条术语在全文用哪个译名 | 译名写 `glossary.md`（`原文 \| 译名 \| 禁用译名`），译文按它落地 | `run.py`：`term_scan` 回扫指定译名是否用了，`Q01`/`Q05` 报未用与禁用 |
+
+判断结果写进 `result.json` 的 `判断层`，分两块：
+
+| 块 | 逐条字段 |
 |-|-|
-| 这段译文怎么写 | 术语按表锁定，句式按目标语习惯 |
-| 这两个术语是不是同一概念 | 原文不同写法指向同一概念时统一 |
+| `segments[]`（逐段翻译） | `id`、`role`、`source_head`、`value`（`模型译文` / `pending`）、`basis`（译文首句原文，脚本核它是否真在 `target` 里）、`filled_by`、`status`、`basis_verbatim`、`residue` |
+| `terms[]`（术语同一） | `term`、`want`（指定译名）、`value`、`basis`、`hit_segments`、`used_segments`、`missed_segments`、`consistent` |
 
-脚本切段、锁术语、数守恒；模型写译文；脚本核段号对齐、引用编号与否定词未丢。
+`n` / `filled` / `pending` 是两块合计；`by_item` 分开列。口径：
 
-判断结果写进 `result.json` 的 `判断层` 字段：每条含 `item`（判断项）、`value`（结论）、`basis`（依据，必须是原句子串）、`filled_by`（模型名或 caller）。未填写的项标 `pending`，不自行补结论。
+- 只有 `targets.txt` 里给的段算 `filled`（`value=模型译文`）；脚本内置的术语草案不算模型结论，该段 `value=pending`。
+- 只有译文里真按指定译名落地的术语算 `filled`；没落地的记 `pending`，`missed_segments` 列出漏用译名的段。
+- 一条都没填时 `filled=0`，`status` 仍按 Q 码与残留判（不因 pending 变 `blocked`）。

@@ -31,6 +31,7 @@ from pathlib import Path
 
 VERSION = "3.0.0"
 RULES_VERSION = "rules/conventions.md v3.0.0"
+JUDGMENT_UNIT = "逐段翻译与术语同一"
 
 # ---------------------------------------------------------------- 正则与词典
 NUM_RE = re.compile(r"(?<![A-Za-z0-9_.])\d[\d,]*(?:\.\d+)?(?![A-Za-z0-9_]|\.[0-9])")
@@ -1059,6 +1060,77 @@ def write_missing(p: Path, root: Path, gaps: list[str], notes: list[str]) -> Non
 
 
 # ---------------------------------------------------------------- 主流程
+def judgment_layer(case_id: str, blocks: list[dict], targets: dict, missing: list[str],
+                   cons: dict, glossary: dict, tp: Path | None) -> dict:
+    """判断层：逐段翻译与术语同一。
+
+    判断由调用方模型做，落点是两处外部文件：`targets.txt`（逐段译文）与
+    `glossary.md`（术语译名）。脚本只核：这段译文是不是外部给的、术语译名有没有真落地。
+    没给的段 / 没落地的术语记 pending，脚本不把内置草案当模型结论。
+    """
+    items: list[dict] = []
+    n_seg = filled_seg = 0
+    for b in blocks:
+        n_seg += 1
+        ext = bool(b.get("target")) and b["id"] not in missing
+        first = ""
+        if ext:
+            sents = split_sentences(b["target"], 0)
+            first = ((sents[0]["source"] if sents else b["target"]) or "").strip()[:80]
+            filled_seg += 1
+        items.append({
+            "id": b["id"], "item": "逐段翻译", "role": b["role"],
+            "source_head": (b["source"] or "").strip()[:80],
+            "value": "模型译文" if ext else "pending",
+            "basis": first,
+            "filled_by": "调用方模型（targets.txt）" if ext else "",
+            "status": "filled" if ext else "pending",
+            "basis_verbatim": (first in b["target"]) if ext else None,
+            "residue": is_residue(b),
+        })
+    term_items: list[dict] = []
+    n_term = filled_term = 0
+    for r in cons.get("terms", []):
+        used_segs = [b["id"] for b in blocks
+                     if b["id"] not in missing and b.get("target")
+                     and any(h["term"] == r["source"] and h["used"] for h in b.get("terms", []))]
+        hit_segs = [b["id"] for b in blocks
+                    if any(h["term"] == r["source"] for h in b.get("terms", []))]
+        n_term += 1
+        ok = bool(used_segs)
+        if ok:
+            filled_term += 1
+        term_items.append({
+            "id": f"term:{r['source']}", "item": "术语同一",
+            "term": r["source"], "want": r["target"], "banned": r.get("banned", []),
+            "value": r["target"] if ok else "pending",
+            "basis": r["target"] if ok else "",
+            "filled_by": "调用方模型（译文里落地的译名）" if ok else "",
+            "status": "filled" if ok else "pending",
+            "basis_verbatim": ok,
+            "occurrences": r.get("occurrences"),
+            "hit_segments": hit_segs[:20],
+            "used_segments": used_segs[:20],
+            "missed_segments": [s for s in r.get("missing", [])][:20],
+            "consistent": ok and not r.get("missing")
+                          and not any(x["term"] == r["source"] for x in cons.get("banned", [])),
+        })
+    n = n_seg + n_term
+    filled = filled_seg + filled_term
+    return {
+        "unit": JUDGMENT_UNIT,
+        "who_fills": "调用方模型：逐段译文写 targets.txt（`### S001` 段号标记）；术语译名写 glossary.md",
+        "who_checks": "run.py：逐段核译文是否来自外部文件且非原文同形；术语用 term_scan 核指定译名是否落地",
+        "source": str(tp) if tp else "未提供 targets.txt（本次译文全为内置草案）",
+        "n": n, "filled": filled, "pending": n - filled,
+        "by_item": {"逐段翻译": {"n": n_seg, "filled": filled_seg, "pending": n_seg - filled_seg},
+                    "术语同一": {"n": n_term, "filled": filled_term, "pending": n_term - filled_term}},
+        "glossary_terms": len(glossary),
+        "segments": items,
+        "terms": term_items,
+    }
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="文献翻译：段/句对齐、术语锁定、译后核验")
     ap.add_argument("--input", default=None, help="输入目录（含原文/case.json/glossary.md/targets.txt）")
@@ -1098,7 +1170,11 @@ def main(argv=None) -> int:
         res = {"case_id": case_id, "skill_version": VERSION,
                "status": "blocked", "status_reason": "没有可切分的原文",
                "gaps": gaps or ["未找到可切分的原文 .txt/.md，PDF 也无法抽取文字层"],
-               "uncertainty": gaps, "deliverables": ["missing_input.md"]}
+               "uncertainty": gaps, "deliverables": ["missing_input.md"],
+               "判断层": {"unit": JUDGMENT_UNIT, "n": 0, "filled": 0, "pending": 0,
+                        "source": "没有可切分的原文，没有可判段",
+                        "who_fills": "调用方模型", "who_checks": "run.py",
+                        "segments": [], "terms": []}}
         write_json(out / "result.json", res)
         write_missing(out / "missing_input.md", root, gaps, read_notes)
         print(json.dumps({"ok": False, "status": "blocked"}, ensure_ascii=False))
@@ -1173,6 +1249,10 @@ def main(argv=None) -> int:
                          "detail": f"出现禁用译名 {len(cons['banned'])} 处",
                          "banned": cons["banned"][:20]})
     cont = continuity(blocks, src_text)
+
+    # ---------- 判断层：逐段翻译与术语同一（模型写 targets.txt / glossary.md，脚本只核） ----------
+    judgment = judgment_layer(case_id, blocks, targets, missing, cons, glossary, tp)
+
     if cont["gaps"]:
         problems.append({"code": "Q02", "seg": None, "kind": "continuous",
                          "detail": f"段区间交叠/错位 {len(cont['gaps'])} 处",
@@ -1395,6 +1475,7 @@ def main(argv=None) -> int:
                     else "无需接管",
                     "acknowledged": acked},
         "output_contract": contract,
+        "判断层": judgment,
         "checks": problems,
         "labels": verify["labels"],
         "manual_check": manual,
@@ -1410,6 +1491,8 @@ def main(argv=None) -> int:
                       "sentences": verify["stats"]["sentences"],
                       "translated": len(targets), "draft": len(missing),
                       "residue": len(residue), "problems": len(unacked),
+                      "judgment": {"unit": JUDGMENT_UNIT, "filled": judgment["filled"],
+                                   "n": judgment["n"]},
                       "term_rate": cons["rate"]}, ensure_ascii=False))
     return 0
 

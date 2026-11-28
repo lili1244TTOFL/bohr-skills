@@ -86,6 +86,126 @@ def build_sections(pages: list[dict]) -> list[dict]:
     return secs
 
 
+# ---------------------------------------------------------------------------
+# 判断层：块归哪一节。脚本给候选（阅读顺序上最近的两个标题），模型判；
+# 图表与公式按题面「不要求理解科学含义」保持脚本判（阅读顺序），不进判断项。
+# ---------------------------------------------------------------------------
+JUDGMENT_UNIT = "块归属章节"
+FRONT_SECTION = "（题名与前置部分）"
+SCRIPT_ROLES = ("caption", "table", "formula")
+JUDGE_ROLES = ("body", "reference", "title")
+
+
+def _block_uid(b: dict, seq: int) -> str:
+    return f"P{b['page']}-{seq}"
+
+
+def block_section_plan(pages: list[dict]) -> list[dict]:
+    """逐块给候选章节：阅读顺序上最近的标题、下一个标题，以及脚本的默认归属。"""
+    flat = [(p, b) for p in pages for b in p["blocks"]]
+    nxt = [None] * len(flat)
+    seen = None
+    for i in range(len(flat) - 1, -1, -1):
+        nxt[i] = seen
+        if flat[i][1]["role"] == "heading":
+            seen = flat[i][1]["text"]
+    rows: list[dict] = []
+    cur = None
+    for i, (_p, b) in enumerate(flat):
+        if b["role"] == "heading":
+            cur = b["text"]
+            continue
+        cols: list[str] = []
+        if cur:
+            cols.append(cur)
+        else:
+            cols.append(FRONT_SECTION)
+        if nxt[i] and nxt[i] not in cols:
+            cols.append(nxt[i])
+        rows.append({
+            "id": _block_uid(b, i + 1), "page": b["page"], "role": b["role"],
+            "text": (b.get("text") or "")[:120],
+            "候选": cols, "脚本归属": (cur or FRONT_SECTION),
+            "判断": b["role"] in JUDGE_ROLES,
+        })
+    return rows
+
+
+def load_block_judgments(p: Path | None) -> tuple:
+    """读 judgments.json：items[{id, section, basis, filled_by}]。读不到返回空表。"""
+    if not p or not p.exists():
+        return {}, (f"未找到 {p}" if p else "未提供 judgments.json")
+    try:
+        obj = json.loads(p.read_text(encoding="utf-8-sig"))
+        raw = obj.get("items") if isinstance(obj, dict) else obj
+        got = {str(it["id"]): it for it in (raw or [])
+               if isinstance(it, dict) and it.get("id")}
+        return got, f"{p}（{len(got)} 条）"
+    except Exception as e:
+        return {}, f"{p} 读不动：{type(e).__name__}: {e}"
+
+
+def block_section_layer(rows: list[dict], decisions: dict, dec_src: str, out: Path) -> dict:
+    """判断层：把模型给的行级归属合成进 result.json；没填的标 pending。"""
+    items, exempt, filled = [], [], 0
+    mapping = []
+    for r in rows:
+        if not r["判断"]:
+            exempt.append({"id": r["id"], "role": r["role"],
+                           "脚本归属": r["脚本归属"],
+                           "理由": "图表/公式不要求理解科学含义，归节按阅读顺序由脚本定"})
+            mapping.append({"id": r["id"], "page": r["page"], "role": r["role"],
+                            "section": r["脚本归属"], "by": "脚本（阅读顺序）"})
+            continue
+        got = decisions.get(r["id"]) or {}
+        val = str(got.get("section") or got.get("decision") or "").strip()
+        text = r["text"]
+        basis = str(got.get("basis") or "")
+        if val:
+            filled += 1
+        mapping.append({"id": r["id"], "page": r["page"], "role": r["role"],
+                        "section": val or "pending",
+                        "by": "调用方模型（judgments.json）" if val else ""})
+        items.append({
+            "id": r["id"], "item": JUDGMENT_UNIT, "page": r["page"], "role": r["role"],
+            "原文": text,
+            "候选": r["候选"], "脚本归属": r["脚本归属"],
+            "value": val or "pending",
+            "basis": basis[:120],
+            "filled_by": str(got.get("filled_by") or "caller") if val else "",
+            "status": "filled" if val else "pending",
+            "in_candidates": (val in r["候选"] or val in (got.get("candidates") or []))
+                             if val else None,
+            "basis_verbatim": (basis in text) if (val and basis) else None,
+        })
+    n = len(items)
+    L = [f"# 判断单：{JUDGMENT_UNIT}", "",
+         f"- 待判 {n} 块；`exempt` 另有 {len(exempt)} 块（图表/公式，脚本按阅读顺序定）",
+         "- 填到：`judgments.json`：`{\"items\":[{\"id\",\"section\",\"basis\",\"filled_by\"}]}`",
+         "- `section` 只能取该块候选里的标题；`basis` 必须是该块原文的逐字片段",
+         "- 不填的块由 `run.py` 标 `pending`，不按脚本默认归属冒充模型结论", "",
+         "| id | 页 | 角色 | 块文本 | 候选 | 脚本归属 |", "|-|-|-|-|-|-|"]
+    for it in items:
+        c = str(it["原文"]).replace("|", "\\|")[:60]
+        L.append(f"| `{it['id']}` | {it['page']} | {it['role']} | {c} | "
+                 f"{' / '.join(it['候选']).replace('|', '/')} | {it['脚本归属']} |")
+    (out / "block_section_worklist.md").write_text("\n".join(L) + "\n", encoding="utf-8")
+    (out / "block_sections.json").write_text(
+        json.dumps({"unit": JUDGMENT_UNIT, "blocks": mapping}, ensure_ascii=False, indent=1),
+        encoding="utf-8")
+    return {
+        "unit": JUDGMENT_UNIT,
+        "who_fills": "调用方模型：读 block_section_worklist.md，把块→节写进 judgments.json",
+        "who_checks": "run.py 核 section 是否在该块候选内、basis 是否该块原文子串；"
+                      "图表/公式不进判断项，按阅读顺序由脚本定",
+        "source": dec_src if decisions else "未填：只给候选与脚本默认归属",
+        "n": n, "filled": filled, "pending": n - filled,
+        "exempt": exempt,
+        "items": items,
+        "mapping": "block_sections.json（全量块→节，含脚本定的图表/公式块）",
+    }
+
+
 def docmeta(pages: list[dict]) -> dict:
     """取文档级元数据：标题、作者、单位、摘要、关键词。
 
@@ -412,6 +532,10 @@ def write_result(out: Path, case_id: str, contract: dict, res: dict, pack: dict)
     result["阅读/解析结果"] = payload["parsed"]
     result["证据与边界"] = payload["evidence"]
     result["运行状态"] = payload["status"]
+    result["判断层"] = pack.get("judgment") or {
+        "unit": JUDGMENT_UNIT, "n": 0, "filled": 0, "pending": 0,
+        "source": "未跑到组装步骤，没有可判块", "items": [], "exempt": [],
+        "who_fills": "调用方模型", "who_checks": "run.py"}
     result.setdefault("uncertainty", list(gaps))
     p = out / "result.json"
     p.write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -423,6 +547,8 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="文献文档解析")
     ap.add_argument("--input", default=None, help="平台输入目录（含 case.json / PDF）")
     ap.add_argument("--pdf", default=None)
+    ap.add_argument("--judgments", default=None,
+                    help="块归属章节的判断（judgments.json）；不给则找输入目录/PDF 同目录的 judgments.json")
     ap.add_argument("--case-id", default=None)
     ap.add_argument("--work", default="work")
     ap.add_argument("--out", default="output")
@@ -465,6 +591,9 @@ def main(argv: list[str] | None = None) -> int:
                 "evidence": {"unit": "page+bbox+para", "note": "未解析，无证据"},
                 "checks": {},
                 "gaps": ["输入目录里没有 PDF"],
+                "判断层": {"unit": JUDGMENT_UNIT, "n": 0, "filled": 0, "pending": 0,
+                         "source": "没有 PDF，没有可判块", "items": [], "exempt": [],
+                         "who_fills": "调用方模型", "who_checks": "run.py"},
                 "output_contract": {k: {"note": "未运行", "pointer": []} for k in contract},
                 "output_contract_echo": {k: {"status": "partial", "source": "pointer"}
                                          for k in contract},
@@ -689,10 +818,22 @@ def main(argv: list[str] | None = None) -> int:
     write_md(out, "figures.md", figures_md(figures))
     write_md(out, "footnotes.md", footnotes_md(notes))
 
+    # 判断层：块归哪一节（脚本给候选，模型判；图表/公式不进判断项）
+    jp = Path(args.judgments) if args.judgments else (Path(args.pdf).parent / "judgments.json"
+                                                     if args.pdf else
+                                                     (Path(args.input) / "judgments.json"
+                                                      if args.input else Path("judgments.json")))
+    decisions, dec_src = load_block_judgments(jp)
+    judgment = block_section_layer(block_section_plan(pages), decisions, dec_src, out)
+    if judgment["pending"]:
+        gaps.append(f"判断层：{judgment['pending']} 块归属待模型判"
+                    f"（候选见 block_section_worklist.md）")
+
     pack = {"sections": sections, "tables": tables, "blocks": blocks, "gaps": gaps,
             "stats": stats, "checks": checks, "doc": doc, "refs": refs,
             "status": status, "formulas": formulas, "figures": figures,
-            "footnotes": notes, "paragraphs": paras, "orphans": orphans}
+            "footnotes": notes, "paragraphs": paras, "orphans": orphans,
+            "judgment": judgment}
     rp = write_result(out, case_id, contract, res, pack)
     print(json.dumps({"ok": True, "status": status,
                       "case_id": case_id, "result": str(rp),

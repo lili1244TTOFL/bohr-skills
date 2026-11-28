@@ -40,8 +40,8 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default=None)
     a = ap.parse_args(argv)
 
-    wl = json.loads(Path(a.worklist).read_text(encoding="utf-8"))
-    fl = json.loads(Path(a.filled).read_text(encoding="utf-8"))
+    wl = json.loads(Path(a.worklist).read_text(encoding="utf-8-sig"))
+    fl = json.loads(Path(a.filled).read_text(encoding="utf-8-sig"))
     keys = bib_keys(Path(a.bib)) if a.bib else set()
 
     base = {it["id"]: it for it in wl.get("items", [])}

@@ -66,6 +66,10 @@ CAPTION_SRC = re.compile(r"引自|改自|数据来自|采自|转引")
 
 CAT_RC_CITE = {"method": "RC3", "results": "RC4", "discussion": "RC4", "caption": "RC4"}
 
+# 判断层：论断配文献。脚本只算候选（词面/语义分）与已有 [n] 的映射，
+# 「这句由哪篇文献支撑」由调用方模型选：写 judgments.json 或给 --match。
+JUDGMENT_UNIT = "论断配文献"
+
 
 def triage(sec: str, text: str) -> tuple[str, str, str]:
     """返回 (类别, 理由码, 命中规则名)。类别四值与理由码范围与 pass1_prep --verify 一致。"""
@@ -116,42 +120,41 @@ def auto_pass1(prep: dict, out_path: Path) -> dict:
             "path": str(out_path), "rule": "章节 + 引用标记 + 线索词"}
 
 
-def auto_match(match_json: Path, out_path: Path) -> dict:
-    """按候选分排序取首位：MARK（稿件 [n] 已映射到库条目）优先，其次 SEM 语义分。
+def auto_match(match_json: Path, out_path: Path, decisions: dict | None = None,
+               pass3: dict | None = None) -> dict:
+    """句—库匹配：已有 [n] 照映射，其余由模型选。
 
-    并列判据收紧：前两名分差 <0.05 且次位仍 ≥0.18 时判为「条目歧义」，置信度降一档，
-    并把并列条目记进 规则命中 / 证据表，交给人工确认；不静默取首位。
+    改前这里直接取候选分首位；现在只给候选。模型的选择来自两处：judgments.json
+    （uid → ids）或 --match 交的 pass3 文件；两处都没有的句子记 NONE + pending，
+    不再按词面重合替模型挑一篇。
     """
     rows = json.loads(match_json.read_text(encoding="utf-8-sig")) if match_json.exists() else []
     lines, hits = [], []
-    n_assign = n_none = n_new = n_ambig = 0
+    n_assign = n_none = n_new = n_ambig = n_pending = 0
     for r in rows:
         cands = r.get("cands") or []
         marked = [c for c in cands if c.get("src") == "MARK"]
+        got = (decisions or {}).get(r["uid"]) or {}
+        p3 = (pass3 or {}).get(r["uid"]) or {}
         if marked:
             ids = [c["id"] for c in marked][:3]
             conf, why = "H", "已有标记映射到库条目"
             basis = "标记 " + "/".join(t for c in marked for t in (c.get("terms") or []))
             ambig, second = False, None
-        elif cands:
-            top = cands[0]
-            sc = float(top.get("score") or 0.0)
-            second = cands[1] if len(cands) > 1 else None
-            sc2 = float(second.get("score") or 0.0) if second else None
-            ids = [top["id"]]
-            conf = "H" if sc >= 0.30 else ("M" if sc >= 0.18 else "L")
-            ambig = sc2 is not None and sc2 >= 0.18 and (sc - sc2) < 0.05
-            if ambig:
-                conf = "M" if conf == "H" else "L"
-            why = f"候选分首位 {sc}"
-            if second is not None:
-                why += f"，次位 {second['id']} {sc2}（差 {round(sc - sc2, 3)}）"
-            if ambig:
-                why += "；并列→条目歧义，降一档待人工确认"
-            basis = " ".join(top.get("terms") or [])[:80] or top["id"]
-        else:
-            ids, conf, why, basis = [], "L", "库内无重合词", "无候选：库内无重合词"
+        elif got.get("ids") or p3.get("ids"):
+            ids = list(got.get("ids") or p3.get("ids") or [])
+            conf = str(got.get("conf") or p3.get("conf") or "H")
+            why = str(got.get("reason") or "模型判断（judgments.json）" if got else "--match 文件")
+            basis = str(got.get("basis") or p3.get("basis") or " ".join(
+                t for c in cands[:1] for t in (c.get("terms") or [])))[:120]
             ambig, second = False, None
+        else:
+            top = cands[0] if cands else None
+            ids, conf, ambig, second = [], "L", False, None
+            n_pending += 1
+            cand_show = "、".join(f"{c['id']}({c.get('score')})" for c in cands[:3]) or "无候选"
+            why = f"待模型选：候选 {cand_show}"
+            basis = f"pending：候选 {cand_show}"
         if ids:
             n_assign += 1
         else:
@@ -162,16 +165,121 @@ def auto_match(match_json: Path, out_path: Path) -> dict:
         lines.append(f"{r['uid']}|{','.join(ids) if ids else 'NONE'}|{conf}|{basis}")
         hits.append({"uid": r["uid"], "ids": ids, "置信度": conf, "规则": why,
                      "依据": basis, "候选分": (cands[0].get("score") if cands else None),
+                     "候选": [{"id": c["id"], "score": c.get("score"), "src": c.get("src"),
+                               "terms": (c.get("terms") or [])[:6]} for c in cands[:3]],
+                     "已映射标记": [c.get("terms") for c in marked][:3] if marked else None,
                      "并列": ("|".join(c["id"] for c in cands[1:2]) or None) if ambig else None,
-                     "歧义": ambig, "说明": r.get("status")})
+                     "歧义": ambig, "待判": not ids and not marked, "说明": r.get("status")})
     lines.append(f"#MATCH n={len(rows)} n_assign={n_assign} n_none={n_none} n_new={n_new}")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return {"rows": len(rows), "n_assign": n_assign, "n_none": n_none,
-            "n_ambiguous": n_ambig,
+            "n_ambiguous": n_ambig, "n_pending": n_pending,
             "path": str(out_path), "items": hits,
-            "rule": "MARK 优先，其次候选分首位（阈值 0.30/0.18 分 H/M/L；"
-                    "前两名差 <0.05 判并列并降一档）"}
+            "rule": "已有 [n] 照映射；其余只给候选，选哪篇由调用方模型定（judgments.json / --match）"}
+
+
+def load_match_judgments(p: Path | None) -> tuple:
+    """读 judgments.json：items[{uid, ids, basis, reason, filled_by}]。"""
+    if not p or not p.exists():
+        return {}, f"未找到 {p}" if p else "未提供 judgments.json"
+    try:
+        obj = json.loads(p.read_text(encoding="utf-8-sig"))
+        raw = obj.get("items") if isinstance(obj, dict) else obj
+        got = {}
+        for it in (raw or []):
+            if isinstance(it, dict) and it.get("uid"):
+                ids = it.get("ids")
+                if isinstance(ids, str):
+                    ids = [x.strip() for x in ids.replace("，", ",").split(",") if x.strip()]
+                got[str(it["uid"])] = {**it, "ids": list(ids or [])}
+        return got, f"{p}（{len(got)} 条）"
+    except Exception as e:
+        return {}, f"{p} 读不动：{type(e).__name__}: {e}"
+
+
+def parse_pass3(p: Path | None) -> dict:
+    """pass3 文件：`uid|ids|conf|basis`，跳过 # 行。"""
+    out: dict[str, dict] = {}
+    if not p or not Path(p).exists():
+        return out
+    for line in Path(p).read_text(encoding="utf-8-sig").splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        parts = line.split("|")
+        if len(parts) < 2:
+            continue
+        ids = [] if parts[1].strip().upper() in ("NONE", "") else \
+            [x.strip() for x in parts[1].split(",") if x.strip()]
+        out[parts[0].strip()] = {"ids": ids,
+                                 "conf": parts[2].strip() if len(parts) > 2 else "",
+                                 "basis": parts[3].strip() if len(parts) > 3 else ""}
+    return out
+
+
+def match_judgment_layer(match_json: Path, decisions: dict, dec_src: str,
+                         pass3: dict, pass3_src: str, out: Path) -> dict:
+    """判断层：论断配文献。一条判断一个 uid，候选是脚本算的，选哪篇是模型的事。"""
+    rows = json.loads(match_json.read_text(encoding="utf-8-sig")) if match_json.exists() else []
+    items, exempt, filled = [], [], 0
+    for r in rows:
+        cands = r.get("cands") or []
+        marked = [c for c in cands if c.get("src") == "MARK"]
+        uid = r["uid"]
+        if marked:
+            exempt.append({"uid": uid, "ids": [c["id"] for c in marked][:3],
+                           "理由": "稿件原有 [n] 已映射到库条目，是编号映射不是选文献"})
+            continue
+        got = decisions.get(uid) or {}
+        p3 = pass3.get(uid) or {}
+        ids = list(got.get("ids") or p3.get("ids") or [])
+        basis = str(got.get("basis") or p3.get("basis") or "")
+        text = str(r.get("text") or "")
+        all_ids = [c["id"] for c in cands]
+        filled_now = bool(ids)
+        if filled_now:
+            filled += 1
+        items.append({
+            "id": uid, "item": JUDGMENT_UNIT, "section": r.get("section"),
+            "原文": text[:160],
+            "候选": [{"id": c["id"], "score": c.get("score"),
+                      "terms": (c.get("terms") or [])[:6]} for c in cands[:3]],
+            "候选全量": all_ids,
+            "value": ",".join(ids) if ids else "pending",
+            "basis": basis[:120],
+            "basis_source": "judgments.json" if got else ("--match 文件" if p3 else ""),
+            "filled_by": (("调用方模型（judgments.json）" if got else "调用方模型（--match）")
+                          if filled_now else ""),
+            "status": "filled" if filled_now else "pending",
+            "in_candidates": (all(i in all_ids for i in ids) if ids else None),
+            # --match 的 basis 是 pass3 文件自带的依据词，不是句子原文，故只核 judgments.json 的
+            "basis_verbatim": ((basis in text) if (ids and basis and got) else None),
+            "model_note": str(got.get("reason") or "")[:200],
+        })
+    n = len(items)
+    L = [f"# 判断单：{JUDGMENT_UNIT}", "",
+         f"- 待判 {n} 句；已判 {filled} 句；`exempt` 另有 {len(exempt)} 句走已有 [n] 映射",
+         "- 填到：`judgments.json`：`{\"items\":[{\"uid\",\"ids\",\"basis\",\"reason\",\"filled_by\"}]}`",
+         "- `ids` 只能从该句候选里选（0 篇以上）；`basis` 必须是该句原文的逐字片段",
+         "- 不填的句子由 `run.py` 标 `pending`，不按词面重合替模型挑", "",
+         "| uid | 章节 | 句 | 候选（id / 分 / 命中词） |", "|-|-|-|-|"]
+    for it in items:
+        c = str(it["原文"]).replace("|", "\\|")[:70]
+        cs = "；".join(f"{x['id']} {x['score']} {'/'.join(x['terms'])}" for x in it["候选"]) or "无"
+        extra = [i for i in it["候选全量"] if i not in {x['id'] for x in it['候选']}]
+        if extra:
+            cs += f"；另有低分候选 {len(extra)} 条（{'/'.join(extra[:4])}）"
+        L.append(f"| `{it['id']}` | {it.get('section') or ''} | {c} | {cs.replace('|', '/')} |")
+    (out / "match_worklist.md").write_text("\n".join(L) + "\n", encoding="utf-8")
+    return {
+        "unit": JUDGMENT_UNIT,
+        "who_fills": "调用方模型：读 match_worklist.md，把 uid→ids 写进 judgments.json（或交 --match 的 pass3 文件）",
+        "who_checks": "run.py 核 ids 是否在该句候选内、basis 是否该句原文子串；再由 verify_sources 核证据强弱",
+        "source": dec_src if decisions else (pass3_src if pass3 else "未填：只给候选，不替模型选"),
+        "n": n, "filled": filled, "pending": n - filled,
+        "exempt": exempt,
+        "items": items,
+    }
 
 
 class Runner:
@@ -311,10 +419,27 @@ class Runner:
             return
 
         m = Path(a.match) if a.match else None
+        self.match_decisions = {}
+        self.match_dec_src = ""
+        self.match_pass3 = {}
+        self.match_pass3_src = ""
         if m is None:
-            # 同上：没有句—库匹配结果时用候选分自己挑，不返回待办
+            # 没有 --match：读模型的 judgments.json（缺省在原稿同目录），仍没有就只给候选
+            jp = Path(a.judgments) if a.judgments else (Path(a.docx).parent / "judgments.json")
+            if jp.exists() or a.judgments:
+                self.match_decisions, self.match_dec_src = load_match_judgments(jp)
             m = work / "pass3_auto.txt"
-            self.auto["match"] = auto_match(work / "match_input.json", m)
+            self.auto["match"] = auto_match(work / "match_input.json", m,
+                                            decisions=self.match_decisions)
+        else:
+            self.match_pass3 = parse_pass3(m)
+            self.match_pass3_src = f"--match {m}（{len(self.match_pass3)} 行）"
+            self.auto["match"] = auto_match(work / "match_input.json",
+                                            work / "pass3_auto.txt",
+                                            pass3=self.match_pass3)
+        self.judgment = match_judgment_layer(
+            work / "match_input.json", self.match_decisions, self.match_dec_src,
+            self.match_pass3, self.match_pass3_src, out)
         self.step("7 匹配校验", "check_pass3.py",
                   [str(m), "--pass1", str(p1), "--lib", str(active_lib)], required=False)
 
@@ -716,11 +841,16 @@ class Runner:
                                    f"计数 {auto['pass1']['counts']}；不是模型判断"})
         if auto.get("match"):
             gaps.append({"kind": "auto",
-                         "detail": f"句—库匹配由内置规则生成（{auto['match']['rule']}），"
+                         "detail": f"句—库匹配：已有 [n] 照映射，其余只给候选"
+                                   f"（{auto['match']['rule']}），"
                                    f"{auto['match']['n_assign']} 句配上、"
                                    f"{auto['match']['n_none']} 句 NONE、"
-                                   f"{auto['match'].get('n_ambiguous', 0)} 句并列待确认；"
-                                   f"不是模型判断"})
+                                   f"{auto['match'].get('n_pending', 0)} 句待模型选"})
+        _jd = getattr(self, "judgment", None) or {}
+        if _jd.get("pending"):
+            gaps.append({"kind": "judgment",
+                         "detail": f"判断层：{_jd['pending']} 句论断配文献待模型选"
+                                   f"（候选见 match_worklist.md，未按词面重合替模型挑）"})
         if not self.a.lib and self.a.refs:
             gaps.append({"kind": "input",
                          "detail": f"无 --lib 文献库输入：以空库为底并入稿件原有文献表，"
@@ -926,6 +1056,10 @@ class Runner:
         result["目标产物"] = result.get("deliverables") or []
         result["事实与来源映射"] = result.get("fact_source_map") or {}
         result["版本与边界"] = result.get("version_boundary") or {}
+        result["判断层"] = getattr(self, "judgment", None) or {
+            "unit": JUDGMENT_UNIT, "n": 0, "filled": 0, "pending": 0,
+            "source": "未跑到句—库匹配步骤，没有可判句", "items": [], "exempt": [],
+            "who_fills": "调用方模型", "who_checks": "run.py"}
         result.setdefault("uncertainty",
                           (result.get("version_boundary") or {}).get("material_gaps") or [])
         p.write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -958,6 +1092,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--pass1", default=None, help="已完成的句子分流结果")
     ap.add_argument("--lib-triage", default=None, help="可选的库整理输出（关键词/格式/查重），用 check_pass2 校验")
     ap.add_argument("--match", default=None, help="已完成的句—库匹配结果")
+    ap.add_argument("--judgments", default=None,
+                    help="论断配文献的判断（judgments.json）；不给则找稿件同目录的 judgments.json")
     ap.add_argument("--no-model", action="store_true",
                     help="不交模型输出，两次模型步骤都用内置规则替身")
     ap.add_argument("--style", default="gbt7714", choices=["gbt7714", "apa7", "ieee"])

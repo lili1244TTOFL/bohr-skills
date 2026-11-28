@@ -1,0 +1,528 @@
+{
+ "sections": [
+  {
+   "sec_id": "S01",
+   "title": "# Abstract",
+   "level": 1,
+   "page": 1,
+   "role": "intro",
+   "role_basis": {
+    "source": "signals",
+    "field": "question",
+    "hits": 1
+   },
+   "first_anchor": "P1-0",
+   "last_anchor": "P1-0",
+   "heading_anchor": null,
+   "n_paras": 1,
+   "n_tables": 0,
+   "carry": {
+    "to": "S02",
+    "to_title": "## 1 Methods",
+    "to_anchor": "P1-1",
+    "to_first": "We measured working memory with the n-back task for 7 days.",
+    "from_anchor": "P1-0",
+    "from_last": "We study sleep restriction. N = 60 adults."
+   },
+   "candidates": {
+    "question": [
+     {
+      "id": "P1-0",
+      "page": 1,
+      "span": [
+       0,
+       27
+      ],
+      "quote": "We study sleep restriction.",
+      "text": "We study sleep restriction.",
+      "why": {
+       "rule": "1_自述研究动作",
+       "match": "We study",
+       "match_span": [
+        0,
+        8
+       ]
+      },
+      "weak": false,
+      "truncated": false
+     }
+    ],
+    "data": [
+     {
+      "id": "P1-0",
+      "page": 1,
+      "span": [
+       27,
+       42
+      ],
+      "quote": " N = 60 adults.",
+      "text": " N = 60 adults.",
+      "why": {
+       "rule": "1_数据与样本",
+       "match": "N = 60",
+       "match_span": [
+        28,
+        34
+       ]
+      },
+      "weak": false,
+      "truncated": false
+     }
+    ],
+    "method": [],
+    "finding": [],
+    "conclusion": [],
+    "limitation": []
+   }
+  },
+  {
+   "sec_id": "S02",
+   "title": "## 1 Methods",
+   "level": 1,
+   "page": 1,
+   "role": "method",
+   "role_basis": {
+    "source": "title",
+    "match": "Method"
+   },
+   "first_anchor": "P1-1",
+   "last_anchor": "P1-1",
+   "heading_anchor": null,
+   "n_paras": 1,
+   "n_tables": 0,
+   "carry": {
+    "to": "S03",
+    "to_title": "## 2 Results",
+    "to_anchor": "P1-2",
+    "to_first": "We found a 15% decline (p<0.01).",
+    "from_anchor": "P1-1",
+    "from_last": "We measured working memory with the n-back task for 7 days."
+   },
+   "candidates": {
+    "question": [],
+    "data": [],
+    "method": [
+     {
+      "id": "P1-1",
+      "page": 1,
+      "span": [
+       0,
+       59
+      ],
+      "quote": "We measured working memory with the n-back task for 7 days.",
+      "text": "We measured working memory with the n-back task for 7 days.",
+      "why": {
+       "rule": "1_方法动作",
+       "match": "We measured",
+       "match_span": [
+        0,
+        11
+       ]
+      },
+      "weak": false,
+      "truncated": false
+     }
+    ],
+    "finding": [],
+    "conclusion": [],
+    "limitation": []
+   }
+  },
+  {
+   "sec_id": "S03",
+   "title": "## 2 Results",
+   "level": 1,
+   "page": 1,
+   "role": "result",
+   "role_basis": {
+    "source": "title",
+    "match": "Results"
+   },
+   "first_anchor": "P1-2",
+   "last_anchor": "P1-4",
+   "heading_anchor": null,
+   "n_paras": 3,
+   "n_tables": 0,
+   "carry": null,
+   "candidates": {
+    "question": [],
+    "data": [],
+    "method": [],
+    "finding": [
+     {
+      "id": "P1-2",
+      "page": 1,
+      "span": [
+       0,
+       32
+      ],
+      "quote": "We found a 15% decline (p<0.01).",
+      "text": "We found a 15% decline (p<0.01).",
+      "why": {
+       "rule": "1_结果自述",
+       "match": "We found",
+       "match_span": [
+        0,
+        8
+       ]
+      },
+      "weak": false,
+      "truncated": false
+     }
+    ],
+    "conclusion": [],
+    "limitation": [
+     {
+      "id": "P1-3",
+      "page": 1,
+      "span": [
+       0,
+       16
+      ],
+      "quote": "## 3 Limitations",
+      "text": "## 3 Limitations",
+      "why": {
+       "rule": "1_局限自述",
+       "match": "Limitations",
+       "match_span": [
+        5,
+        16
+       ]
+      },
+      "weak": false,
+      "truncated": false
+     },
+     {
+      "id": "P1-4",
+      "page": 1,
+      "span": [
+       0,
+       30
+      ],
+      "quote": "Only young adults were tested.",
+      "text": "Only young adults were tested.",
+      "why": {
+       "rule": "2_否定表述",
+       "match": "Only young",
+       "match_span": [
+        0,
+        10
+       ]
+      },
+      "weak": false,
+      "truncated": false
+     }
+    ]
+   }
+  }
+ ],
+ "card": {
+  "研究问题": {
+   "status": "auto",
+   "items": [
+    {
+     "text": "We study sleep restriction.",
+     "quote": "We study sleep restriction.",
+     "anchor": "P1-0",
+     "span": [
+      0,
+      27
+     ],
+     "page": 1,
+     "section": "# Abstract",
+     "sec_id": "S01",
+     "why": {
+      "rule": "1_自述研究动作",
+      "match": "We study",
+      "match_span": [
+       0,
+       8
+      ]
+     }
+    }
+   ],
+   "signal_rules": [
+    "1_自述研究动作",
+    "2_目的状语"
+   ],
+   "machine_checkable": true,
+   "handoff": []
+  },
+  "数据": {
+   "status": "auto",
+   "items": [
+    {
+     "text": " N = 60 adults.",
+     "quote": " N = 60 adults.",
+     "anchor": "P1-0",
+     "span": [
+      27,
+      42
+     ],
+     "page": 1,
+     "section": "# Abstract",
+     "sec_id": "S01",
+     "why": {
+      "rule": "1_数据与样本",
+      "match": "N = 60",
+      "match_span": [
+       28,
+       34
+      ]
+     }
+    }
+   ],
+   "signal_rules": [
+    "1_数据与样本",
+    "2_数据来源"
+   ],
+   "machine_checkable": true,
+   "handoff": []
+  },
+  "方法条件": {
+   "status": "auto",
+   "items": [
+    {
+     "text": "We measured working memory with the n-back task for 7 days.",
+     "quote": "We measured working memory with the n-back task for 7 days.",
+     "anchor": "P1-1",
+     "span": [
+      0,
+      59
+     ],
+     "page": 1,
+     "section": "## 1 Methods",
+     "sec_id": "S02",
+     "why": {
+      "rule": "1_方法动作",
+      "match": "We measured",
+      "match_span": [
+       0,
+       11
+      ]
+     }
+    }
+   ],
+   "signal_rules": [
+    "1_方法动作",
+    "2_条件限定"
+   ],
+   "machine_checkable": true,
+   "handoff": []
+  },
+  "主要发现": {
+   "status": "auto",
+   "items": [
+    {
+     "text": "We found a 15% decline (p<0.01).",
+     "quote": "We found a 15% decline (p<0.01).",
+     "anchor": "P1-2",
+     "span": [
+      0,
+      32
+     ],
+     "page": 1,
+     "section": "## 2 Results",
+     "sec_id": "S03",
+     "why": {
+      "rule": "1_结果自述",
+      "match": "We found",
+      "match_span": [
+       0,
+       8
+      ]
+     }
+    }
+   ],
+   "signal_rules": [
+    "1_结果自述",
+    "2_统计表述"
+   ],
+   "machine_checkable": true,
+   "handoff": []
+  },
+  "结论": {
+   "status": "not_reported",
+   "items": [],
+   "signal_rules": [
+    "1_结论自述",
+    "2_总结语"
+   ],
+   "machine_checkable": false,
+   "handoff": [
+    {
+     "action": "人工补齐或确认确实未报告",
+     "why": "全篇未命中该字段信号；可能未报告，也可能信号表未覆盖",
+     "sections_checked": [
+      "S01 # Abstract",
+      "S02 ## 1 Methods",
+      "S03 ## 2 Results"
+     ],
+     "search_terms": [
+      "in conclusion",
+      "overall",
+      "结论"
+     ]
+    }
+   ]
+  },
+  "局限": {
+   "status": "auto",
+   "items": [
+    {
+     "text": "Only young adults were tested.",
+     "quote": "Only young adults were tested.",
+     "anchor": "P1-4",
+     "span": [
+      0,
+      30
+     ],
+     "page": 1,
+     "section": "## 2 Results",
+     "sec_id": "S03",
+     "why": {
+      "rule": "2_否定表述",
+      "match": "Only young",
+      "match_span": [
+       0,
+       10
+      ]
+     }
+    }
+   ],
+   "signal_rules": [
+    "1_局限自述",
+    "2_否定表述"
+   ],
+   "machine_checkable": true,
+   "handoff": []
+  }
+ },
+ "knowledge": [
+  {
+   "kind": "method",
+   "section": "## 1 Methods",
+   "sec_id": "S02",
+   "page": 1,
+   "anchor": "P1-1",
+   "span": [
+    0,
+    59
+   ],
+   "quote": "We measured working memory with the n-back task for 7 days.",
+   "text": "We measured working memory with the n-back task for 7 days.",
+   "key": "we measured working memory with the n back task for 7 days",
+   "why": {
+    "rule": "1_方法动作",
+    "match": "We measured",
+    "match_span": [
+     0,
+     11
+    ]
+   },
+   "id": "K01",
+   "tokens": [
+    "measured",
+    "working",
+    "memory",
+    "n-back",
+    "task",
+    "days"
+   ],
+   "alias": [
+    "we measured working memory with the n back task for 7 days"
+   ]
+  },
+  {
+   "kind": "finding",
+   "section": "## 2 Results",
+   "sec_id": "S03",
+   "page": 1,
+   "anchor": "P1-2",
+   "span": [
+    0,
+    32
+   ],
+   "quote": "We found a 15% decline (p<0.01).",
+   "text": "We found a 15% decline (p<0.01).",
+   "key": "we found a 15 decline p 0 01",
+   "why": {
+    "rule": "1_结果自述",
+    "match": "We found",
+    "match_span": [
+     0,
+     8
+    ]
+   },
+   "id": "K02",
+   "tokens": [
+    "found",
+    "decline"
+   ],
+   "alias": [
+    "we found a 15 decline p 0 01"
+   ]
+  },
+  {
+   "kind": "variable",
+   "section": "## 1 Methods",
+   "sec_id": "S02",
+   "page": 1,
+   "anchor": "P1-1",
+   "span": [
+    0,
+    59
+   ],
+   "quote": "We measured working memory with the n-back task for 7 days.",
+   "text": "with the n-back task",
+   "key": "with the n back task",
+   "why": {
+    "rule": "6_测量工具",
+    "match": "with the n-back task",
+    "match_span": [
+     27,
+     47
+    ]
+   },
+   "reason": "变量条：text 为抽出的测量工具/变量名，quote 为原句",
+   "alias": [
+    "with the n back task"
+   ],
+   "id": "K03",
+   "tokens": [
+    "n-back",
+    "task"
+   ]
+  }
+ ],
+ "conflicts": [],
+ "coverage": {
+  "headings": 3,
+  "sections": 3,
+  "matched_titles": 3,
+  "ratio": 1.0,
+  "order_ok": true,
+  "blocks_kept": 5,
+  "blocks_assigned": 5,
+  "excluded_by_role": {},
+  "missing_headings": []
+ },
+ "meta": {
+  "version": "2.0.0",
+  "fields": [
+   "研究问题",
+   "数据",
+   "方法条件",
+   "主要发现",
+   "结论",
+   "局限"
+  ],
+  "evidence_unit": "block id + span（P<页>-<序> / T<页>-<序> / F<页>-<序>）",
+  "notes_status": "agent",
+  "thresholds": {
+   "N03_heading_coverage": 0.8
+  },
+  "filled_by": "deepseek-v4-flash",
+  "judgment_note": "模型改写：局限字段去掉标题块 P1-3（\"## 3 Limitations\" 是标题不是局限陈述），留 P1-4；其余六字段与知识点逐条核过锚点后沿用抽取结果。"
+ }
+}

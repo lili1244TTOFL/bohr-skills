@@ -145,8 +145,8 @@ RULES = [
 DEP_FILES = ("requirements.txt", "environment.yml", "environment.yaml", "pyproject.toml", "pipfile")
 
 # 题面与元数据不是材料：task.md 里的 64/900/16384 是平台预算，case.json 只用于
-# case_id 与 output_contract，都不能进抽取桶或正文桶。
-SKIP_FILES = {"task.md", "case.json"}
+# case_id 与 output_contract，都不能进抽取桶或正文桶。judgments.json 是模型判断入口，也不是材料。
+SKIP_FILES = {"task.md", "case.json", "judgments.json"}
 
 # 中文"键：值"写法：README/材料说明里最常见的形态，逐键映射到六要素
 CN_KEYS = [
@@ -168,6 +168,39 @@ CN_KEYS = [
 ]
 RULES += [_r(要素, 名称, r"(?im)^[ \t\-*]*" + re.escape(k) + r"[ \t]*[：:][ \t]*(?P<v>[^\n]+)", 对象)
           for k, 要素, 名称, 对象 in CN_KEYS]
+
+# ---------------------------------------------------------------------------
+# 六类要素归类：规则表只给"这一条可能属于哪几类"（候选），归到哪一类由调用方模型判。
+# 判据是候选之外的语境（同一段材料里它在讲超参、环境还是数据），正则判不了。
+# 未判的条目 要素="待判"，不按规则默认值落盘，也不进六要素覆盖。
+# ---------------------------------------------------------------------------
+ELEMENT_CANDIDATES = {
+    # 参数：训练超参
+    "学习率": ["参数", "实验设置"], "批大小": ["参数", "实验设置"],
+    "训练轮数": ["参数", "实验设置"], "权重衰减": ["参数", "实验设置"],
+    "优化器": ["参数", "实验设置"], "学习率调度": ["参数", "实验设置"],
+    "预热步数": ["参数", "实验设置"], "丢弃率": ["参数", "实验设置"],
+    "梯度裁剪": ["参数", "实验设置"],
+    "随机种子": ["参数", "复现"], "序列长度": ["参数", "数据集"],
+    # 实验设置
+    "硬件": ["实验设置", "复现"], "软件版本": ["实验设置", "复现"],
+    "重复次数": ["实验设置", "对照"], "精度": ["实验设置", "参数"],
+    "评测频率": ["实验设置", "对照"], "分布式策略": ["实验设置"],
+    "运行环境": ["实验设置", "复现"],
+    # 数据集
+    "数据集名": ["数据集"], "数据集版本": ["数据集"], "数据集规模": ["数据集"],
+    "预处理": ["数据集", "参数"], "划分比例": ["数据集"],
+    "划分随机方式": ["数据集"], "子集规模": ["数据集"], "子集用途": ["数据集", "对照"],
+    # 对照
+    "基线对象": ["对照"], "基线版本": ["对照"], "对照条件": ["对照", "实验设置"],
+    "评价指标": ["对照", "实验设置"], "指标值": ["对照"],
+    "统计方式": ["对照", "实验设置"],
+    # 复现
+    "代码版本": ["复现", "实验设置"], "训练命令": ["复现", "实验设置"],
+    "数据获取": ["复现", "实验设置"],
+}
+ELEMENT_FALLBACK = ["参数", "实验设置", "数据集", "对照", "复现"]
+JUDGMENT_UNIT = "六类要素归类"
 
 # 复现缺项要问什么（追问清单里用，避免"请补代码版本"这种没有动作的话）
 REPRO_TIP = {"代码版本": "代码版本号或 git commit", "环境": "Python/框架/CUDA 版本",
@@ -272,7 +305,11 @@ def extract_items(files: list[Path], buckets_by_path: dict[str, str]) -> list[di
                 if rule["名称"] == "硬件":
                     val = re.sub(r"\s*[×x]\s*", "x", val)
                 found.append({
-                    "要素": rule["要素"], "名称": rule["名称"], "对象": obj,
+                    # 规则只记"可能属于哪几类"，要素一栏留给模型判（见 apply_element_judgment）
+                    "规则判类": rule["要素"],
+                    "要素候选": ELEMENT_CANDIDATES.get(rule["名称"], ELEMENT_FALLBACK),
+                    "要素": "",
+                    "名称": rule["名称"], "对象": obj,
                     "值": val, "单位": rule["单位"],
                     "来源类型": KIND_SOURCE.get(kind, kind),
                     "证据": f"{path.name}:{ln}", "证据行": src_line.strip()[:160],
@@ -281,12 +318,17 @@ def extract_items(files: list[Path], buckets_by_path: dict[str, str]) -> list[di
     return found
 
 
+def _class_key(f: dict) -> str:
+    """分组用的类键：优先规则判类（候选里的默认项），没有就用已判的要素。"""
+    return f.get("规则判类") or f.get("要素") or ""
+
+
 def dedup_items(found: list[dict]) -> list[dict]:
-    """同一 (要素, 名称, 对象, 值) 只留首条；同值不同来源记进「另见」，不压缩证据面。"""
+    """同一 (类键, 名称, 对象, 值) 只留首条；同值不同来源记进「另见」，不压缩证据面。"""
     seen: dict[tuple, dict] = {}
     out: list[dict] = []
     for f in found:
-        key = (f["要素"], f["名称"], f["对象"], f["值"])
+        key = (_class_key(f), f["名称"], f["对象"], f["值"])
         if key in seen:
             refs = seen[key].setdefault("另见", [])
             if len(refs) < 5 and f["证据"] not in refs:
@@ -295,11 +337,11 @@ def dedup_items(found: list[dict]) -> list[dict]:
         seen[key] = f
         out.append(f)
 
-    # 同一 (要素, 名称, 对象) 下被更长取值包含的取值，是同一事实的片段，不重复成行
+    # 同一 (类键, 名称, 对象) 下被更长取值包含的取值，是同一事实的片段，不重复成行
     norm = lambda s: re.sub(r"\s+", "", s).lower()
     groups: dict[tuple, list[dict]] = {}
     for f in out:
-        groups.setdefault((f["要素"], f["名称"], f["对象"]), []).append(f)
+        groups.setdefault((_class_key(f), f["名称"], f["对象"]), []).append(f)
     keep: list[dict] = []
     for (_, 名称, _), rows in groups.items():
         alive = [r for r in rows
@@ -326,6 +368,94 @@ def normalize_objects(items: list[dict]) -> None:
         if ds and i["名称"] in {"数据集版本", "数据集规模", "划分比例", "划分随机方式",
                                "预处理", "子集规模", "子集用途"} and i["对象"] in {"数据", "划分", "-"}:
             i["对象"] = ds
+
+
+# ---------------------------------------------------------------------------
+# 判断层：六类要素归类。规则出候选 + 原文锚点，模型把结论写进 <输入目录>/judgments.json，
+# 本函数只读、只核格式，没判的条目留 "待判"，不替模型选一个候选。
+# ---------------------------------------------------------------------------
+def _element_worksheet(case_id: str, rows: list[dict], jf: Path) -> str:
+    L = [f"# 判断单：{JUDGMENT_UNIT}", "",
+         f"- case_id：`{case_id}`",
+         f"- 待判：{len(rows)} 条抽出来的要素",
+         f"- 填到：`{jf}`（`{{\"items\":[{{\"id\",\"decision\",\"basis\",\"filled_by\"}}]}}`）",
+         "- `decision` 只能取该行候选里的一个；`basis` 必须是该行证据行的原文子串",
+         "- 不判的条目由 run.py 标 `pending`，六要素覆盖里不计该类，脚本不代填", "",
+         "| id | 名称 | 作用对象 | 取值 | 证据 | 证据行 | 候选 | 规则判类 |",
+         "|-|-|-|-|-|-|-|-|"]
+    for r in rows:
+        cell = lambda s: str(s).replace("|", "\\|")[:60]
+        L.append(f"| `{r['id']}` | {cell(r['名称'])} | {cell(r['对象'])} | {cell(r['值'])} | "
+                 f"{cell(r['证据'])} | {cell(r.get('证据行', ''))} | "
+                 f"{'/'.join(r['要素候选'])} | {r['规则判类']} |")
+    return "\n".join(L) + "\n"
+
+
+def apply_element_judgment(items: list[dict], root: Path, out: Path,
+                           case_id: str = "case") -> dict:
+    rows = [i for i in items if i.get("要素候选")]
+    seen: dict[str, int] = {}
+    for i in rows:
+        base = f"{i['名称']}@{i['证据']}"
+        seen[base] = seen.get(base, 0) + 1
+        i["id"] = f"{base}#{seen[base]}"
+    jf = Path(root) / "judgments.json"
+    filled_map: dict[str, dict] = {}
+    source = f"未找到 {jf}"
+    if jf.is_file():
+        try:
+            obj = json.loads(read(jf))
+            raw = obj.get("items") if isinstance(obj, dict) else obj
+            for it in (raw or []):
+                if isinstance(it, dict) and it.get("id"):
+                    filled_map[str(it["id"])] = it
+            source = f"{jf}（{len(filled_map)} 条）"
+        except Exception as exc:
+            source = f"{jf} 读不动：{type(exc).__name__}: {exc}"
+    filled = 0
+    for i in rows:
+        got = filled_map.get(i["id"]) or {}
+        val = str(got.get("decision") or got.get("value") or "").strip()
+        basis = str(got.get("basis") or "").strip()
+        i["item"] = JUDGMENT_UNIT
+        if val:
+            i["要素"] = val
+            i["判断依据"] = basis[:200]
+            i["filled_by"] = str(got.get("filled_by") or "caller")
+            i["status"] = "filled"
+            i["in_candidates"] = val in i["要素候选"]
+            i["basis_verbatim"] = bool(basis) and basis in f"{i.get('证据行', '')} {i['值']}"
+            filled += 1
+        else:
+            i["要素"] = "待判"
+            i["判断依据"] = ""
+            i["filled_by"] = ""
+            i["status"] = "pending"
+            i["in_candidates"] = None
+            i["basis_verbatim"] = None
+    exempt = [{"名称": i["名称"], "证据": i["证据"],
+               "理由": "不是正则判类：" + ("文件名判据" if i["名称"] == "依赖清单" else "调用方给的键清单")}
+              for i in items if not i.get("要素候选") and i.get("要素")]
+    try:
+        (Path(out) / "element_worksheet.md").write_text(
+            _element_worksheet(case_id, rows, jf), encoding="utf-8")
+    except Exception:
+        pass
+    n = len(rows)
+    return {
+        "unit": JUDGMENT_UNIT,
+        "who_fills": "调用方模型：读 element_worksheet.md，写 <输入目录>/judgments.json",
+        "who_checks": "run.py 核 id 是否在单内、decision 是否在候选内、basis 是否为证据行原文子串",
+        "source": source,
+        "n": n, "filled": filled, "pending": n - filled,
+        "items": [{"id": i["id"], "item": JUDGMENT_UNIT, "名称": i["名称"], "对象": i["对象"],
+                   "值": i["值"], "证据": i["证据"], "候选": i["要素候选"],
+                   "规则判类": i["规则判类"], "value": i["要素"], "basis": i["判断依据"],
+                   "filled_by": i["filled_by"], "status": i["status"],
+                   "in_candidates": i["in_candidates"],
+                   "basis_verbatim": i["basis_verbatim"]} for i in rows[:200]],
+        "exempt": exempt,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -959,6 +1089,9 @@ def main(argv=None) -> int:
             "deliverables": ["missing_input.md"],
             "output_contract": contract,
             "目标产物": None, "事实与来源映射": None, "版本与边界": None,
+            "判断层": {"unit": JUDGMENT_UNIT, "n": 0, "filled": 0, "pending": 0,
+                     "source": "无材料，没有可判条目", "items": [], "exempt": [],
+                     "who_fills": "调用方模型", "who_checks": "run.py"},
             "elapsed_s": round(time.perf_counter() - t0, 3),
         }
         for k in contract:
@@ -1016,6 +1149,9 @@ def main(argv=None) -> int:
     if rejected:
         items = [i for i in items if i["证据"] not in set(rejected)]
 
+    # ---------- 判断层：六类要素归类（规则出候选，模型判） ----------
+    judgment = apply_element_judgment(items, root, out, case_id)
+
     steps, step_src = extract_steps(code, buckets.get("说明", []), buckets.get("日志", []))
     ok, missing, badvals, unsourced = align(items, manuscript)
     conflicts = find_conflicts(items)
@@ -1051,6 +1187,8 @@ def main(argv=None) -> int:
     for s in SIX:
         if s not in covered:
             gaps.append(f"六类要素缺：{s}（材料中未抽到该类要素，章节已写待作者确认）")
+    if judgment.get("pending"):
+        gaps.append(f"判断层：{judgment['pending']} 条要素归类待模型判（未填 judgments.json 或 id 不匹配）")
 
     blocking = [g for g in gaps
                 if g.startswith(("正文数值", "正文未写", "材料冲突", "数据集版本不明", "六类要素缺"))]
@@ -1119,6 +1257,7 @@ def main(argv=None) -> int:
                            "无材料冲突、数据集版本不缺失；partial：上述任一未满足"},
         "deliverables": ["methods_section.md", "params.tsv", "repro.md", "questions.md"],
         "output_contract": contract,
+        "判断层": judgment,
         "elapsed_s": round(time.perf_counter() - t0, 3),
     }
     _fixed = {
@@ -1153,6 +1292,8 @@ def main(argv=None) -> int:
     print(json.dumps({"ok": True, "status": status, "items": len(items),
                       "params": result["统计"]["抽取参数"], "steps": len(steps),
                       "refs": result["六要素覆盖"]["证据数"],
+                      "judgment": {"unit": JUDGMENT_UNIT, "filled": judgment["filled"],
+                                   "n": judgment["n"]},
                       "missing": len(missing), "unsourced": len(unsourced),
                       "conflicts": len(conflicts), "gaps": len(gaps),
                       "questions": len(questions)}, ensure_ascii=False))
@@ -1197,6 +1338,9 @@ def write_baseline(case_id, out: Path, buckets, contract, t0: float) -> int:
         "事实与来源映射": {"证据单位": "file:line", "条数": 0, "逐条": []},
         "版本与边界": {"修改差异": [], "人工确认项": [], "材料缺口": ["baseline 不做缺口分析"],
                     "异常": [], "六要素缺失": list(SIX)},
+        "判断层": {"unit": JUDGMENT_UNIT, "n": 0, "filled": 0, "pending": 0,
+                 "source": "baseline 模式不判类", "items": [], "exempt": [],
+                 "who_fills": "调用方模型", "who_checks": "run.py"},
         "elapsed_s": round(time.perf_counter() - t0, 3),
     }
     (out / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")

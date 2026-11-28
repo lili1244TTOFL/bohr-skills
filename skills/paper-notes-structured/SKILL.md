@@ -37,7 +37,7 @@ description: 适用于需要按论文原章节产出可回溯结构化笔记的�
 v1 写的 `notes.json` 不是真实路径。`--notes` 指向不存在的文件时按自动模式跑，只留一条 gaps，不报错。
 
 ```bash
-# 平台形态：自动抽取（notes_status=auto）
+# 平台形态：自动抽取（notes_status=pending，判断层全 pending）
 python run.py --input /input --work /app/work --out /app/output
 
 # 平台形态：读自己改写后的笔记（notes_status=agent）
@@ -61,13 +61,13 @@ python run.py --pdf examples/paper.md --work work --out output --case-id demo
 | 知识条目 | `knowledge[]` | `{"kind":"finding","section":…,"page":…,"anchor":"P3-1","text":…,"key":…}` |
 
 ```text
-1. run.py --input /input              → notes_status=auto、status=success；读 notes_auto.json
+1. run.py --input /input              → notes_status=pending、判断层全 pending；读 notes_auto.json
 2. 按 rules/notes_rules.md 改一份 /app/work/notes_agent.json，锚点与数字不动
 3. run.py --input /input --notes /app/work/notes_agent.json  → 核验全过则 success
 4. 仍 partial 就读 verify.json 的 problems 改锚点或删数字，回 2；超过 3 轮记 partial 并写明原因
 ```
 
-规则抽取版本（`notes_status=auto`）本身就是要交付的那件产物：切节、字段候选、卡片与知识点都由 `scripts/notes.py` 从原文算出，块 id 可回溯；`--notes` 改写是可选加强，不是产出前提。
+规则抽取版本（`notes_status=pending`）照样出产物：切节、字段候选、卡片与知识点都由 `scripts/notes.py` 从原文算出，块 id 可回溯；但它只是草案，`判断层` 全部条目 `pending`。`--notes` 改写是让判断层变成 `agent` 的那一步。
 
 ## 4 流程
 
@@ -100,7 +100,7 @@ python run.py --pdf examples/paper.md --work work --out output --case-id demo
 |-|-|
 | `case_id` | `case.json` 的 `case_id` 或 `id`；都缺用 `--case-id`，再缺用 `case` |
 | `status` | `success`（核验 0 问题且笔记非空，`auto`/`agent` 均可）、`partial`（有产物但判据未过）、`blocked`（找不到源文件） |
-| `notes_status` | `auto`（规则抽取）或 `agent`（读了 `--notes` 文件） |
+| `notes_status` | `agent`（读了 `--notes` 文件）或 `pending`（没给 `--notes`，只有规则草案，判断层全 pending） |
 | `source` | `path`、`n_pages`、`n_sections` |
 | `stats` | `sections`、`knowledge`、`items`（带锚点条目数）、`card_filled`（已填字段名数组）、`elapsed_s` |
 | `deliverables` | 4 个产物的 `kind`、`path`、`bytes` |
@@ -150,7 +150,7 @@ python run.py --pdf examples/paper.md --work work --out output --case-id demo
 | 情况 | 行为 | 状态 |
 |-|-|-|
 | 找不到源文件 | 写 `result.json` 与 `missing_input.md`（列出找过的后缀与要补什么），stdout 打 `{"ok":false,"status":"blocked"}`，退出码 1 | `blocked` |
-| `--notes` 路径不存在 | 静默退自动模式，`gaps` 记规则抽取版本一条 | 按核验结果 `success` / `partial` |
+| `--notes` 路径不存在 | 静默退自动模式，`notes_status=pending`、`判断层` 全 pending，`gaps` 记规则草案一条 | 按核验结果 `success` / `partial` |
 | 改稿缺 `sections`、`card`、`knowledge` | 记缺口「缺 X，回退到自动抽取」，整份回退 | 按核验结果 `success` / `partial` |
 | 改稿三键齐但 `sections` 为空 | 记 N00，核验不过 | `partial`（`agent`） |
 | 锚点越界或数字不在原文 | 记 N01 或 N02，该条目不自动改数 | `partial`（`agent`） |
@@ -199,15 +199,23 @@ python -c "import json;r=json.load(open('output/result.json',encoding='utf-8'));
 | 与现成工具比，边界在哪、做不到什么 | `docs/对比与边界.md` |
 | 每条结论的出处 | `result.json` 里带出处的那几个字段，见上面的输出契约表 |
 
-## 判断层：哪些交给调用方模型
+## 判断层：要点分类
 
-脚本准备候选与锚点，判断由调用方模型做，脚本再核结果。本节说明本包的判断项。
+脚本切章节、给锚点；以下判断由调用方模型做，脚本再核。
 
-| 判断项 | 口径 |
+| 判断项 | 填什么 | 由谁核 |
+|-|-|-|
+| 要点属于六字段卡片的哪一个 | 放进 `notes.json` 的 `card.<字段>.items`（字段名见 §3 的 `card` 行），用 `--notes` 交回 | `run.py` 核 `value` 在六字段内（`in_candidates`）、锚点能截回原文 |
+| 知识点是哪一类 | `knowledge[].kind`，取 `term/variable/method/finding/conclusion/limitation` | `run.py` 核 `kind` 在候选内、`quote` 逐字在原文（`basis_verbatim`） |
+
+流程：不给 `--notes` 时 `notes.json` 只是规则草案，`notes_status=pending`、判断层全 `pending`，`gaps` 记条数；模型在 `work/notes_agent.json` 上改写后用 `--notes` 交回，`run.py` 写 `notes_status=agent` 与 `判断层`，再用同一份 `verify_notes.py` 核 N00–N09。
+
+| 判断层键 | 含义 |
 |-|-|
-| 哪句是研究问题/数据/方法条件/发现/局限 | 五类，逐条给锚点 |
-| 这条笔记能否回答题面的问题 | 按题面问题判断，不按章节顺序 |
+| `unit` | 固定 `要点分类` |
+| `n` / `filled` / `pending` | 待判 / 已判 / 未判条数（六字段条目 + 知识点条目合计） |
+| `source` | 读的是哪个 `--notes` 文件；没给就写「notes.md 是规则草案」 |
+| `by_field` / `by_kind` | 六字段与六类 kind 各几条 |
+| `items[]` | `id`（`锚点@card.字段#序` / `锚点@knowledge.kind#序`）、`候选`、`规则判类`、`value`、`basis`（quote 前 100 字）、`filled_by`、`status`、`in_candidates`、`basis_verbatim` |
 
-脚本切章节、给锚点（页/块/字符区间）；模型判类与取舍；脚本核每条笔记的锚点能截回原文。
-
-判断结果写进 `result.json` 的 `判断层` 字段：每条含 `item`（判断项）、`value`（结论）、`basis`（依据，必须是原句子串）、`filled_by`（模型名或 caller）。未填写的项标 `pending`，不自行补结论。
+`--notes` 缺、坏、缺字段按原逻辑整份回落自动抽取并记 gap，判断层跟着回到 `pending`。

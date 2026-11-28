@@ -1685,6 +1685,54 @@ def pipeline(*, input_dir=None, primary=None, secondary=None, work="work",
     result["阅读/解析结果"] = payload["parsed"]
     result["证据与边界"] = payload["evidence"]
     result["运行状态"] = payload["status"]
+
+    # 判断层：同实体是否合并由调用方模型判，脚本只核证据与来源。
+    # 读 root/judgments.json：items[{id, decision: merge|keep_separate, basis, filled_by}]
+    _jf = Path(root) / "judgments.json"
+    _pairs = []
+    _mi = 0
+    _used = set()
+    for _m in merges:
+        _srcs = [str(x) for x in (_m.get("sources") or [])]
+        _sid = _m.get("id") or ("M-" + "-".join(sorted(_srcs))[:40] or "M-x")
+        _mi += 1
+        _base = "M-" + ("-".join(sorted(_srcs))[:32] or "x") + f"-{_mi:02d}"
+        _sid = _m.get("id") or _base
+        while _sid in _used:
+            _mi += 1
+            _sid = _base + f"-{_mi}"
+        _used.add(_sid)
+        _pairs.append({"id": _sid,
+                       "candidates": _m.get("sources") or [],
+                       "rule_decision": _m.get("decision")})
+    if _jf.exists():
+        try:
+            _filled = {x.get("id"): x for x in
+                       (json.loads(_jf.read_text(encoding="utf-8-sig")).get("items") or [])
+                       if x.get("id")}
+        except Exception:
+            _filled = {}
+    else:
+        _filled = {}
+    _rows, _np = [], 0
+    for _p in _pairs:
+        _j = _filled.get(_p["id"]) or {}
+        if not _j.get("decision"):
+            _np += 1
+            _rows.append({**_p, "value": None, "basis": None,
+                          "filled_by": None, "status": "pending"})
+        else:
+            _rows.append({**_p, "value": _j.get("decision"),
+                          "basis": _j.get("basis"), "filled_by": _j.get("filled_by"),
+                          "status": "filled"})
+    result["判断层"] = {
+        "item": "同实体验证：两条同名记录是否同一对象、冲突怎么记",
+        "n": len(_rows), "filled": len(_rows) - _np, "pending": _np,
+        "rows": _rows,
+        "note": "merge/keep_separate 由调用方模型判，脚本核每条边带来源与原引"}
+    if _np:
+        gaps.append(f"判断层：{_np} 条待调用方模型判断同实体合并（未提供 judgments.json）")
+
     (out_d / "result.json").write_text(
         json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
     return result

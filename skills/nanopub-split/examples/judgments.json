@@ -1,0 +1,134 @@
+{
+ "items": [
+  {
+   "id": "S-0002",
+   "assertions": [],
+   "basis": "原句「：`case_id`、`paper`、`authors`、`year`、`doi`」列举输入文件 case.json 里有哪些字段，属输入背景交代，没有研究结论，判为无断言。",
+   "filled_by": "ds-base"
+  },
+  {
+   "id": "S-0003",
+   "assertions": [],
+   "basis": "原句「python run.py --input examples/case」是调用命令，属操作方法，不断言任何事实关系，判为无断言。",
+   "filled_by": "ds-base"
+  },
+  {
+   "id": "S-0004",
+   "assertions": [],
+   "basis": "原句「\"coverage\": 0.833」是脚本示意输出的一行 JSON，回显本次运行的条数与覆盖率，属产物示例，不是对研究对象的断言。",
+   "filled_by": "ds-base"
+  },
+  {
+   "id": "S-0005",
+   "assertions": [],
+   "basis": "原句「产物四份」列举交付文件清单，属产品说明，无研究结论，判为无断言。",
+   "filled_by": "ds-base"
+  },
+  {
+   "id": "S-0006",
+   "assertions": [],
+   "basis": "原句「`assertions.tsv` 一行长这样」在说明 TSV 的列格式（主体、关系、客体来自本次运行），属方法描述，无结论。",
+   "filled_by": "ds-base"
+  },
+  {
+   "id": "S-0008",
+   "assertions": [],
+   "basis": "原句「逐句列出没命中受控关系词的句子」描述产物 unresolved.md 做什么，属方法描述；括号里的「样本量为 60 名本科生。」只是引例，不是本句在下判断。",
+   "filled_by": "ds-base"
+  },
+  {
+   "id": "S-0009",
+   "assertions": [],
+   "basis": "原句「并记录过宽长句的切分情况」是上一句的续写残片（以右引号、右括号开头），仍是产物功能说明，无独立命题，判为无断言。",
+   "filled_by": "ds-base"
+  },
+  {
+   "id": "S-0010",
+   "assertions": [],
+   "basis": "原句「没有断言可交时也靠它交代原因」讲的是工具在无断言可交时的输出行为（不会空手返回），属方法/产物说明，不是科研断言。",
+   "filled_by": "ds-base"
+  },
+  {
+   "id": "S-0011",
+   "assertions": [],
+   "basis": "原句「此处只作示例」是对上文的免责说明；前一分句「数值与条数随正文而变」也只说输出随输入而变，属示例说明，无研究结论。",
+   "filled_by": "ds-base"
+  },
+  {
+   "id": "S-0001",
+   "assertions": [],
+   "basis": "原句「每条只承一个关系」是样例表的建模口径（一行一个关系、主客分开、末列记拆分方式），属方法约定，不是关于研究内容的断言。",
+   "filled_by": "ds-base"
+  },
+  {
+   "id": "S-0007",
+   "assertions": [],
+   "basis": "原句「样例不冒充正式结果」是文档免责声明，说明本文件的样例性质，属背景，不构成可判断真假的科研断言。",
+   "filled_by": "ds-base"
+  },
+  {
+   "id": "S-0019",
+   "assertions": [
+    {
+     "subject": "模型 A",
+     "relation": "outperforms",
+     "object": "模型 B",
+     "quote": "模型 A | outperforms | 模型 B"
+    }
+   ],
+   "basis": "原句「模型 A | outperforms | 模型 B」以表格行写出主体-关系-客体，比较关系可判断真假（模型 A 是否优于模型 B），拆一条；末列「比较关系」是标注，不另拆。",
+   "filled_by": "ds-base"
+  },
+  {
+   "id": "S-0026",
+   "assertions": [
+    {
+     "subject": "该结果",
+     "relation": "correlates_with",
+     "object": "剂量",
+     "quote": "该结果 | correlates_with | 剂量"
+    }
+   ],
+   "basis": "原句「该结果 | correlates_with | 剂量」断言相关关系，可判断真假，拆一条；主体「该结果」是代词，需回原文确认指代对象（末列「主体为指代，需人工确认」已点明）。",
+   "filled_by": "ds-base"
+  },
+  {
+   "id": "S-0027",
+   "assertions": [
+    {
+     "subject": "实验组",
+     "relation": "outperforms",
+     "object": "基线",
+     "quote": "实验组 | outperforms | 基线"
+    }
+   ],
+   "basis": "原句「实验组 | outperforms | 基线」是表格行给出的比较断言，可核对实验组是否优于基线，拆一条；末列「比较」是标注。",
+   "filled_by": "ds-base"
+  },
+  {
+   "id": "S-0029",
+   "assertions": [
+    {
+     "subject": "结论外推",
+     "relation": "underperforms",
+     "object": "跨人群适用性",
+     "quote": "结论外推 | underperforms | 跨人群适用性"
+    }
+   ],
+   "basis": "原句「结论外推 | underperforms | 跨人群适用性」是限制类断言，可判断外推的跨人群适用性是否更差，拆一条；行文略拗口（外推与其适用性比强弱），照表列记；末列「限制类断言」是标注。",
+   "filled_by": "ds-base"
+  },
+  {
+   "id": "S-0030",
+   "assertions": [],
+   "basis": "原句「这 20 条展示」是用法说明，交代样例表的用途（展示一条断言一个关系的粒度），属文档元信息，无研究结论。",
+   "filled_by": "ds-base"
+  },
+  {
+   "id": "S-0031",
+   "assertions": [],
+   "basis": "原句「样例不冒充正式结果」与本文件前面的同一免责句重复出现，仍是样例性质声明，不是科研断言。",
+   "filled_by": "ds-base"
+  }
+ ]
+}

@@ -49,6 +49,32 @@ JUNK = (".aux", ".log", ".out", ".toc", ".lof", ".lot", ".bbl", ".blg", ".fls",
         ".fdb_latexmk", ".synctex.gz", ".nav", ".snm", ".vrb", ".bcf", ".run.xml",
         ".idx", ".ind", ".ilg", ".glo", ".gls", ".xdv")
 
+# 判断层：脚本出候选，调用方模型填结论。没填就 pending，本文件不替模型判。
+JUDGMENT_UNIT = "缺陷根因归类"
+ROOT_CAUSES = ("标签冲突", "引用断链", "文献缺条", "浮动体不合规", "语法不闭合",
+               "素材缺失", "章节层级", "表格结构", "模板缺项", "冗余未引用", "误报计数")
+# 每个 T 码给 1–2 个根因候选，模型的结论必须落在候选内（脚本会核）
+CODE_CANDIDATES = {
+    "T01": ["标签冲突", "引用断链"],
+    "T02": ["引用断链", "标签冲突"],
+    "T03": ["冗余未引用", "标签冲突"],
+    "T04": ["文献缺条", "冗余未引用"],
+    "T05": ["冗余未引用", "文献缺条"],
+    "T06": ["浮动体不合规", "语法不闭合"],
+    "T07": ["语法不闭合", "素材缺失"],
+    "T08": ["语法不闭合", "误报计数"],
+    "T09": ["素材缺失", "语法不闭合"],
+    "T10": ["章节层级"],
+    "T11": ["表格结构", "语法不闭合"],
+    "T12": ["语法不闭合", "误报计数"],
+    "T13": ["标签冲突", "章节层级"],
+    "T14": ["文献缺条", "模板缺项"],
+    "T15": ["文献缺条", "标签冲突"],
+    "T16": ["模板缺项"],
+    "T17": ["素材缺失", "文献缺条"],
+    "T18": ["模板缺项", "章节层级"],
+}
+
 
 def _utf8() -> None:
     for s in (sys.stdout, sys.stderr):
@@ -170,7 +196,12 @@ def resolve_contract(key: str, ctx: dict) -> tuple[str, dict]:
 def write_blocked(out: Path, case_id: str, case_dir: Path, msg: str, extra: dict | None = None) -> int:
     (out / "result.json").write_text(json.dumps(
         {"case_id": case_id, "status": "blocked", "gaps": [msg], "uncertainty": [msg],
-         "deliverables": ["missing_input.md"], **(extra or {})},
+         "deliverables": ["missing_input.md"],
+         # 判断层第 1 处落盘：没进静态检查就没有可判缺陷，如实记 0 条，不编结论
+         "判断层": {"unit": JUDGMENT_UNIT, "n": 0, "filled": 0, "pending": 0,
+                    "source": "未跑到静态检查，没有可判缺陷", "items": [],
+                    "who_fills": "调用方模型", "who_checks": "run.py"},
+         **(extra or {})},
         ensure_ascii=False, indent=1), encoding="utf-8")
     (out / "missing_input.md").write_text("\n".join([
         "# 缺料说明：没有可检查的 LaTeX 源文件", "",
@@ -183,6 +214,115 @@ def write_blocked(out: Path, case_id: str, case_dir: Path, msg: str, extra: dict
     ]) + "\n", encoding="utf-8")
     print(json.dumps({"ok": False, "status": "blocked", "error": msg}, ensure_ascii=False))
     return 1
+
+
+def _snippet_at(files: dict[str, str], rel: str, line: int | None) -> str:
+    if not line or rel not in files:
+        return ""
+    rows = files[rel].split("\n")
+    return rows[line - 1].strip()[:160] if 0 < line <= len(rows) else ""
+
+
+def judgment_items(problems: list[dict], files: dict[str, str]) -> list[dict]:
+    """把缺陷清单变成待判工作单：一条缺陷一个稳定 id + 候选根因 + 原文锚点。"""
+    items: list[dict] = []
+    seen: dict[str, int] = {}
+    for p in problems:
+        code = str(p.get("code") or "")
+        rel = str(p.get("file") or "")
+        ln = p.get("line")
+        base = f"{code}@{rel}:{ln}"
+        seen[base] = seen.get(base, 0) + 1
+        items.append({
+            "id": f"{base}#{seen[base]}",
+            "code": code,
+            "at": f"{rel}:{ln}" if ln else rel,
+            "severity": p.get("severity"),
+            "detail": str(p.get("detail") or "")[:200],
+            "snippet": _snippet_at(files, rel, ln),
+            "candidates": CODE_CANDIDATES.get(code, list(ROOT_CAUSES)),
+        })
+    return items
+
+
+def judgment_worksheet(case_id: str, items: list[dict], jf: Path) -> str:
+    L = [f"# 判断单：{JUDGMENT_UNIT}", "",
+         f"- case_id：`{case_id}`",
+         f"- 待判：{len(items)} 条缺陷",
+         f"- 填到：`{jf}`（JSON：`{{\"items\": [{{\"id\", \"decision\", \"basis\", \"filled_by\"}}]}}`）",
+         "- 只填本单里的 id；`basis` 必须能在该条的 `snippet` 或 `detail` 里逐字找到",
+         "- 不填的条目由 `run.py` 标 `pending`，脚本不代填结论", ""]
+    for it in items:
+        L += [f"## {it['id']}", "",
+              f"- 码：`{it['code']}`（{it['severity']}） 位置：`{it['at']}`",
+              f"- 现象：{it['detail']}",
+              f"- 原文：`{it['snippet'] or '（无行号，按 detail 判）'}`",
+              f"- 候选根因：{' / '.join(it['candidates'])}", ""]
+    return "\n".join(L) + "\n"
+
+
+def judgment_layer(root: Path, case_id: str, problems: list[dict],
+                   files: dict[str, str], out: Path) -> dict:
+    """读 root/judgments.json，把模型判断合进 result.json 的 判断层。
+
+    脚本只出候选、核格式；没填的条目标 pending，不替模型下结论。
+    """
+    items = judgment_items(problems, files)
+    jf = Path(root) / "judgments.json"
+    filled_map: dict[str, dict] = {}
+    source = f"未找到 {jf}"
+    if jf.is_file():
+        try:
+            obj = json.loads(jf.read_text(encoding="utf-8-sig"))
+            raw = obj.get("items") if isinstance(obj, dict) else obj
+            for it in (raw or []):
+                if isinstance(it, dict) and it.get("id"):
+                    filled_map[str(it["id"])] = it
+            source = f"{jf}（{len(filled_map)} 条）"
+        except Exception as e:
+            source = f"{jf} 读不动：{type(e).__name__}: {e}"
+    filled = 0
+    for it in items:
+        got = filled_map.get(it["id"]) or {}
+        val = str(got.get("decision") or got.get("value") or "").strip()
+        basis = str(got.get("basis") or "").strip()
+        it["item"] = JUDGMENT_UNIT
+        if val:
+            probe = f"{it['snippet']} {it['detail']}"
+            it["value"] = val[:120]
+            it["basis"] = basis[:200]
+            it["filled_by"] = str(got.get("filled_by") or "caller")
+            it["in_candidates"] = val in it["candidates"]
+            it["basis_verbatim"] = bool(basis) and basis in probe
+            it["status"] = "filled"
+            filled += 1
+        else:
+            it["value"] = "pending"
+            it["basis"] = ""
+            it["filled_by"] = ""
+            it["in_candidates"] = None
+            it["basis_verbatim"] = None
+            it["status"] = "pending"
+    try:
+        (Path(out) / "judgment_worksheet.md").write_text(
+            judgment_worksheet(case_id, items, jf), encoding="utf-8")
+    except Exception:
+        pass
+    n = len(items)
+    return {
+        "unit": JUDGMENT_UNIT,
+        "who_fills": "调用方模型：读 judgment_worksheet.md，写 root/judgments.json",
+        "who_checks": "run.py 核 id 是否在单内、value 是否在候选内、basis 是否为原文子串",
+        "source": source,
+        "n": n, "filled": filled, "pending": n - filled,
+        "items": items,
+        "skipped_ids": sorted(k for k in filled_map if k not in {i["id"] for i in items}),
+    }
+
+
+def _pending_judgment(note: str) -> dict:
+    return {"unit": JUDGMENT_UNIT, "n": 0, "filled": 0, "pending": 0,
+            "source": note, "items": [], "who_fills": "调用方模型", "who_checks": "run.py"}
 
 
 def _run(args, t0: float) -> int:
@@ -594,6 +734,14 @@ def _run(args, t0: float) -> int:
         "output_contract": contract_echo,
         "output_contract_echo": contract_status,
     }
+    # ---------- 5.5 判断层：缺陷根因归类 ----------
+    # 模型填在输入目录的 judgments.json；这里只读、只核格式，填不到就 pending。
+    try:
+        result["判断层"] = judgment_layer(root, case_id, c1["problems"], files, out)
+    except Exception as e:  # 判断层自身出错不许拖垮主路径
+        result["判断层"] = _pending_judgment(f"判断层构建失败：{type(e).__name__}: {e}")
+    if result["判断层"].get("pending"):
+        gaps.append(f"判断层：{result['判断层']['pending']} 条待模型判（{JUDGMENT_UNIT}）")
     (out / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=1),
                                      encoding="utf-8")
     (out / "report.md").write_text(_report_md(case_id, result, info, c1, c2, fx, build,
@@ -604,6 +752,9 @@ def _run(args, t0: float) -> int:
                       "compile": {"state": compile_state,
                                   "compiled": bool(build.get("ok")),
                                   "skipped": build.get("skipped")},
+                      "judgment": {"unit": JUDGMENT_UNIT,
+                                   "filled": result["判断层"].get("filled"),
+                                   "n": result["判断层"].get("n")},
                       "gaps": len(gaps)}, ensure_ascii=False))
     return 0
 
@@ -809,6 +960,8 @@ def main(argv: list[str] | None = None) -> int:
              "gaps": [f"运行异常：{type(e).__name__}: {e}", "详见 error.md"],
              "uncertainty": ["本轮结果不完整：异常发生在产物落盘之前"],
              "deliverables": ["error.md"],
+             # 判断层第 3 处落盘：异常时没有缺陷清单，如实记 0 条
+             "判断层": _pending_judgment("运行异常，未产出缺陷清单"),
              "stats": {"model_requests": 0, "elapsed_s": round(time.time() - t0, 2)}},
             ensure_ascii=False, indent=1), encoding="utf-8")
         print(json.dumps({"ok": False, "status": "blocked", "error": str(e)},

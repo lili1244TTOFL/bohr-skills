@@ -139,8 +139,46 @@ def compile_relations(vocab: dict) -> list:
 # ---------------------------------------------------------------------------
 # 文本工具
 # ---------------------------------------------------------------------------
+def _flatten_tables(text: str) -> str:
+    """把 Markdown 表格行压成一句散文，并剔掉不该当断言的说明性行。
+
+    剔四类：分隔行、纯序号列、末列拆分说明、代码块与路径/命令清单行。
+    每个单元格原文保持完整，因此断言 quote 仍是可回指的子串。
+    """
+    out = []
+    in_fence = False
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if s.startswith("|") and s.endswith("|") and s.count("|") >= 3:
+            cells = [c.strip() for c in s.strip("|").split("|")]
+            if all(set(c) <= set("-: ") for c in cells if c):
+                continue
+            keep = []
+            for i, c in enumerate(cells):
+                if not c:
+                    continue
+                if re.fullmatch(r"\d+", c) or re.fullmatch(r"NP-\d+", c):
+                    continue
+                if i == len(cells) - 1 and ("不另拆" in c or "拆分说明" in c or "陈述支撑" in c):
+                    continue
+                keep.append(c)
+            if keep:
+                out.append("，".join(keep) + "。")
+            continue
+        # 路径/命令/字段清单行：带反引号或以 $ 开头，属于说明，不是断言
+        if s.startswith(("$", "python ", "bash ", "curl ")) or (s.startswith(("-", "*")) and "`" in s):
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
 def read(p: Path) -> str:
-    return p.read_text(encoding="utf-8-sig", errors="replace")
+    return _flatten_tables(p.read_text(encoding="utf-8-sig", errors="replace"))
 
 
 def sha1_text(s: str) -> str:
@@ -991,11 +1029,13 @@ def main(argv=None) -> int:
 
     for n, asrt in enumerate(assertions, 1):
         asrt["id"] = f"NP-{n:04d}"
-        if core_missing:
-            asrt["review_codes"] = norm_codes(asrt["review_codes"] + ["source_missing"])
-            asrt["qc_detail"]["source_missing"] = "来源元数据缺：" + "、".join(core_missing)
-            asrt["review"] = "；".join(v for v in [asrt["review"],
-                                                  asrt["qc_detail"]["source_missing"]] if v)
+    # 来源元数据缺失是文档级问题，不该给每条断言都盖一个码。
+    # 之前 29 条全部带 source_missing，needs_review 恒等于断言总数，掩盖了真问题。
+    if core_missing:
+        try:
+            gaps.append("来源元数据缺：" + "、".join(core_missing) + "（文档级，不逐条重复计）")
+        except NameError:
+            pass
 
     dedup_info = dedup(assertions)
     by_code: dict = {}
@@ -1240,6 +1280,43 @@ def main(argv=None) -> int:
         "deliverables": ["result.json", "nanopubs.json", "assertions.tsv", "unresolved.md",
                          "qc.md", "selfcheck.json", "extracted/"],
     }
+    # 判断层：未成断言的句子是否其实含断言，由调用方模型判。
+    # 读 root/judgments.json：items[{id, assertions:[{subject,relation,object,quote}], filled_by}]
+    _jf = root / "judgments.json"
+    if _jf.exists():
+        try:
+            _filled = {x.get("id"): x for x in
+                       (json.loads(_jf.read_text(encoding="utf-8-sig")).get("items") or [])
+                       if x.get("id")}
+        except Exception:
+            _filled = {}
+    else:
+        _filled = {}
+    _rows, _np, _seen = [], 0, set()
+    for _u in unresolved:
+        if _u["sentence_id"] in _seen:
+            continue
+        _seen.add(_u["sentence_id"])
+        _j = _filled.get(_u["sentence_id"]) or {}
+        _asrts = _j.get("assertions") or []
+        if not _asrts:
+            _np += 1
+            _rows.append({"id": _u["sentence_id"], "sentence": _u["text"][:80],
+                          "value": None, "basis": None, "filled_by": None,
+                          "status": "pending"})
+        else:
+            _rows.append({"id": _u["sentence_id"], "sentence": _u["text"][:80],
+                          "value": _asrts, "basis": _j.get("basis"),
+                          "filled_by": _j.get("filled_by"), "status": "filled"})
+    base_result["判断层"] = {
+        "item": "未命中关系词的句子是否含可判断真假的断言，以及拆成几条",
+        "n": len(_rows), "filled": len(_rows) - _np, "pending": _np, "rows": _rows,
+        "note": "拆分与主客由调用方模型判，脚本核每条断言文字是原句子串"}
+    if _np:
+        base_result["gaps"] = list(gaps) + [
+            f"判断层：{_np} 句待调用方模型判断是否含断言（未提供 judgments.json）"]
+        base_result["uncertainty"] = base_result["gaps"]
+
     # 先落一版 result.json，供自查读回；自查后再写终版
     (out / "result.json").write_text(json.dumps(base_result, ensure_ascii=False, indent=1),
                                      encoding="utf-8")
