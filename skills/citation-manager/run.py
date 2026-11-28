@@ -117,10 +117,14 @@ def auto_pass1(prep: dict, out_path: Path) -> dict:
 
 
 def auto_match(match_json: Path, out_path: Path) -> dict:
-    """按候选分排序取首位：MARK（稿件 [n] 已映射到库条目）优先，其次 SEM 语义分。"""
+    """按候选分排序取首位：MARK（稿件 [n] 已映射到库条目）优先，其次 SEM 语义分。
+
+    并列判据收紧：前两名分差 <0.05 且次位仍 ≥0.18 时判为「条目歧义」，置信度降一档，
+    并把并列条目记进 规则命中 / 证据表，交给人工确认；不静默取首位。
+    """
     rows = json.loads(match_json.read_text(encoding="utf-8-sig")) if match_json.exists() else []
     lines, hits = [], []
-    n_assign = n_none = n_new = 0
+    n_assign = n_none = n_new = n_ambig = 0
     for r in rows:
         cands = r.get("cands") or []
         marked = [c for c in cands if c.get("src") == "MARK"]
@@ -128,29 +132,46 @@ def auto_match(match_json: Path, out_path: Path) -> dict:
             ids = [c["id"] for c in marked][:3]
             conf, why = "H", "已有标记映射到库条目"
             basis = "标记 " + "/".join(t for c in marked for t in (c.get("terms") or []))
+            ambig, second = False, None
         elif cands:
             top = cands[0]
             sc = float(top.get("score") or 0.0)
+            second = cands[1] if len(cands) > 1 else None
+            sc2 = float(second.get("score") or 0.0) if second else None
             ids = [top["id"]]
             conf = "H" if sc >= 0.30 else ("M" if sc >= 0.18 else "L")
+            ambig = sc2 is not None and sc2 >= 0.18 and (sc - sc2) < 0.05
+            if ambig:
+                conf = "M" if conf == "H" else "L"
             why = f"候选分首位 {sc}"
+            if second is not None:
+                why += f"，次位 {second['id']} {sc2}（差 {round(sc - sc2, 3)}）"
+            if ambig:
+                why += "；并列→条目歧义，降一档待人工确认"
             basis = " ".join(top.get("terms") or [])[:80] or top["id"]
         else:
             ids, conf, why, basis = [], "L", "库内无重合词", "无候选：库内无重合词"
+            ambig, second = False, None
         if ids:
             n_assign += 1
         else:
             n_none += 1
             n_new += 1
+        if ambig:
+            n_ambig += 1
         lines.append(f"{r['uid']}|{','.join(ids) if ids else 'NONE'}|{conf}|{basis}")
         hits.append({"uid": r["uid"], "ids": ids, "置信度": conf, "规则": why,
-                     "依据": basis, "说明": r.get("status")})
+                     "依据": basis, "候选分": (cands[0].get("score") if cands else None),
+                     "并列": ("|".join(c["id"] for c in cands[1:2]) or None) if ambig else None,
+                     "歧义": ambig, "说明": r.get("status")})
     lines.append(f"#MATCH n={len(rows)} n_assign={n_assign} n_none={n_none} n_new={n_new}")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return {"rows": len(rows), "n_assign": n_assign, "n_none": n_none,
+            "n_ambiguous": n_ambig,
             "path": str(out_path), "items": hits,
-            "rule": "MARK 优先，其次候选分首位（阈值 0.30/0.18 分 H/M/L）"}
+            "rule": "MARK 优先，其次候选分首位（阈值 0.30/0.18 分 H/M/L；"
+                    "前两名差 <0.05 判并列并降一档）"}
 
 
 class Runner:
@@ -226,6 +247,24 @@ class Runner:
             if ok:
                 active_lib = merged
 
+        # 2b 库内去重：同一文献的不同导出/中英题名/预印本形式合并成一条，逐对写判据；
+        # 合并后 orig_map 改指 canonical，编号才不会出现两条同 DOI 的条目。
+        self.dedupe_ok = False
+        if active_lib.exists():
+            dd_argv = ["--lib", str(active_lib),
+                       "--out", str(work / "library_deduped.json"),
+                       "--audit", str(work / "dedupe_audit.json"),
+                       "--md", str(out / "merge_basis.md"),
+                       "--glossary", str(HERE / "rules" / "glossary_zh_en.md")]
+            if (work / "orig_map.json").exists():
+                dd_argv += ["--orig-map", str(work / "orig_map.json"),
+                            "--out-map", str(work / "orig_map_dedup.json")]
+            ok_dd, dd = self.step("2b 库内去重", "dedupe_audit.py", dd_argv, required=False)
+            if ok_dd and (work / "library_deduped.json").exists():
+                active_lib = work / "library_deduped.json"
+                self.dedupe_ok = True
+                self.dedupe_report = dd
+
         if active_lib.exists():
             self.lib_path = active_lib
             self.step("3a DOI 核验", "doi_check.py",
@@ -282,8 +321,9 @@ class Runner:
         argv = ["--prep", str(work / "prep.json"), "--match", str(m),
                 "--lib", str(active_lib), "--out", str(work / "numbering.json"),
                 "--cands", str(work / "match_input.tsv")]
-        if (work / "orig_map.json").exists():
-            argv += ["--orig-map", str(work / "orig_map.json")]
+        omap = work / "orig_map_dedup.json" if getattr(self, "dedupe_ok", False) else work / "orig_map.json"
+        if omap.exists():
+            argv += ["--orig-map", str(omap)]
         elif a.refs:
             argv += ["--refs", a.refs]
         argv += ["--style", a.style, "--lang", a.lang]
@@ -316,6 +356,39 @@ class Runner:
             refs_txt.write_text(
                 "\n".join(f"[{r['n']}] {r['text']}" for r in numbering["refs"]) + "\n",
                 encoding="utf-8")
+
+        # 9c 来源核验：条目元数据 + 逐句「论断↔文献」判定，产出证据不足清单
+        self.step("9c 来源核验", "verify_sources.py",
+                  ["--lib", str(active_lib), "--numbering", str(num_json),
+                   "--cands", str(work / "match_input.json"),
+                   "--out", str(work / "source_audit.json"),
+                   "--tsv", str(out / "evidence_map.tsv"),
+                   "--md", str(out / "evidence_gaps.md")], required=False)
+
+        # 9d 覆盖表：全部章节 / 全部引用点 / 全部条目
+        cov_argv = ["--prep", str(work / "prep.json"), "--pass1", str(p1),
+                    "--numbering", str(num_json), "--lib", str(active_lib),
+                    "--out", str(work / "coverage.json"),
+                    "--md", str(out / "coverage.md")]
+        for flag, f in (("--ingest", work / "ingest_report.json"),
+                        ("--dedupe", work / "dedupe_audit.json"),
+                        ("--audit", work / "source_audit.json")):
+            if f.exists():
+                cov_argv += [flag, str(f)]
+        self.step("9d 覆盖表", "coverage_report.py", cov_argv, required=False)
+
+        # 9e 快照与回溯链：输入 sha256 + 每条编号的回溯链
+        prov_argv = ["--numbering", str(num_json), "--lib", str(active_lib),
+                     "--out", str(work / "provenance.json"),
+                     "--md", str(out / "trace.md"),
+                     "--input", f"docx={a.docx}"]
+        if a.refs:
+            prov_argv += ["--input", f"refs={a.refs}"]
+        for lp in a.lib or []:
+            prov_argv += ["--input", f"lib={lp}"]
+        if (work / "changelog.jsonl").exists():
+            prov_argv += ["--changelog", str(work / "changelog.jsonl")]
+        self.step("9e 快照回溯", "provenance.py", prov_argv, required=False)
 
         self.step("10 成品校验", "check_refs.py",
                   ["--docx", str(cited), "--numbering", str(num_json)], required=False)
@@ -380,9 +453,12 @@ class Runner:
         (r"^阅读[/／]解析结果", "cited_manuscript"),
         (r"^证据与边界", "verification"),
         (r"^运行状态", "status"),
+        (r"覆盖|coverage|章节|条目清单|清单", "coverage"),
+        (r"快照|回溯|provenance|snapshot|trace|来源定位", "provenance"),
+        (r"度量|指标|metrics|对照|comparison|baseline|效率", "metrics"),
         (r"manuscript|稿件|改稿|正文|修订|draft|article", "cited_manuscript"),
         (r"reference|bibliograph|文献表|参考文献|refs", "reference_list"),
-        (r"citation|引用|标注|in_text", "citation_actions"),
+        (r"citation|引用|标注|in_text|论断", "source_audit"),
         (r"dedupe|duplicate|去重|合并", "dedupe"),
         (r"verif|audit|核验|检查|一致", "verification"),
         (r"change|diff|changelog|修改|变更", "changes"),
@@ -406,7 +482,7 @@ class Runner:
 
     def echo_contract(self, contract: dict, deliverables: list, checks: dict,
                       changes: list, fmap: list, gaps: list, uncertainty: list,
-                      exceptions: list) -> dict:
+                      exceptions: list, extra: dict | None = None) -> dict:
         """按 case 的 output_contract 逐字段回显。
 
         每个字段填能核对的真实内容：产物路径+字节数+sha256、逐条匹配依据、改动条数与
@@ -502,9 +578,45 @@ class Runner:
                 checks[s["name"]] = {"ok": r.get("ok"),
                                      "n_problems": r.get("n_problems", r.get("n_error")),
                                      "counts": r.get("counts")}
+        for s in self.steps:
+            r = s["result"] or {}
+            if s["name"] == "2b 库内去重":
+                checks[s["name"]] = {"ok": s["ok"], "n_pairs": r.get("n_pairs"),
+                                     "n_merged": r.get("n_merged_pairs"),
+                                     "n_keep": r.get("n_kept"),
+                                     "n_conflict": r.get("n_conflict"),
+                                     "by_code": r.get("by_code")}
+            elif s["name"] == "9c 来源核验":
+                checks[s["name"]] = {"ok": r.get("ok"), "n_error": r.get("n_error"),
+                                     "n_warn": r.get("n_warn"),
+                                     "n_need_human": r.get("n_need_human"),
+                                     "verdicts": r.get("verdicts")}
+            elif s["name"] == "9d 覆盖表":
+                checks[s["name"]] = {"ok": s["ok"], "n_manual": r.get("n_manual"),
+                                     "n_cite_points": r.get("n_cite_points"),
+                                     "n_uncited": r.get("n_uncited")}
+            elif s["name"] == "9e 快照回溯":
+                checks[s["name"]] = {"ok": s["ok"], "n_inputs": r.get("n_inputs"),
+                                     "n_refs": r.get("n_refs"),
+                                     "n_orphan": r.get("n_orphan")}
 
         preview_step = next((s for s in self.steps if s["name"] == "12 渲染预览"), None)
         preview = (preview_step or {}).get("result") or {}
+
+        # 新增证据件的读取（缺文件不报错，相关字段就为空并在 gaps 里说明）
+        def _load(name: str) -> dict:
+            p = work / name
+            if not p.exists():
+                return {}
+            try:
+                return json.loads(p.read_text(encoding="utf-8-sig"))
+            except Exception:
+                return {}
+
+        dedupe = _load("dedupe_audit.json")
+        src_audit = _load("source_audit.json")
+        coverage = _load("coverage.json")
+        prov = _load("provenance.json")
 
         deliverables = []
         for kind, path, fmt, extra in [
@@ -514,11 +626,41 @@ class Runner:
             ("numbering_table", work / "numbering.tsv", "tsv",
              {"entries": numbering.get("n_refs")}),
             ("changelog", out / "changelog.md", "md", {"entries": len(changes)}),
+            ("dedupe_basis", out / "merge_basis.md", "md",
+             {"pairs": dedupe.get("n_pairs_examined"),
+              "merged": dedupe.get("n_merged_pairs"),
+              "kept": dedupe.get("n_kept")}),
+            ("coverage", out / "coverage.md", "md",
+             {"sections": (coverage.get("totals") or {}).get("n_sections"),
+              "cite_points": (coverage.get("totals") or {}).get("n_cite_points"),
+              "entries": (coverage.get("totals") or {}).get("n_entries")}),
+            ("evidence_map", out / "evidence_map.tsv", "tsv",
+             {"cites": src_audit.get("n_cites"),
+              "weak": (src_audit.get("verdict_counts") or {}).get("weak"),
+              "no_source": (src_audit.get("verdict_counts") or {}).get("no_source")}),
+            ("evidence_gaps", out / "evidence_gaps.md", "md",
+             {"need_human": src_audit.get("n_need_human")}),
+            ("trace", out / "trace.md", "md", {"refs": prov.get("n_refs")}),
         ]:
             if path.exists():
                 deliverables.append({"kind": kind, "path": str(path), "format": fmt,
                                      "bytes": path.stat().st_size,
                                      "sha256": sha256(path)[:16], **extra})
+
+        # 中间证据件复制进 out，评审只看 out 也能复核（脚本仍写 work）
+        for name in ("source_audit.json", "coverage.json", "dedupe_audit.json",
+                     "provenance.json"):
+            srcp = work / name
+            if not srcp.exists():
+                continue
+            dst = out / name
+            try:
+                shutil.copyfile(srcp, dst)
+            except Exception:
+                dst = srcp
+            deliverables.append({"kind": name.rsplit(".", 1)[0], "path": str(dst),
+                                 "format": "json", "bytes": dst.stat().st_size,
+                                 "sha256": sha256(dst)[:16]})
 
         for kind, pat, fmt in [("preview_pdf", "preview*/**/*.pdf", "pdf"),
                                ("preview_png", "preview*/**/*.png", "png")]:
@@ -531,24 +673,39 @@ class Runner:
             deliverables.append({"kind": "caption_map", "path": str(caps_file), "format": "json",
                                  "bytes": caps_file.stat().st_size,
                                  "sha256": sha256(caps_file)[:16]})
-        for name in ("references.bib", "references.ris"):
-            p = out / name
-            if p.exists():
-                deliverables.append({"kind": "library_export", "path": str(p),
-                                     "format": name.rsplit(".", 1)[1],
-                                     "bytes": p.stat().st_size,
-                                     "sha256": sha256(p)[:16]})
+        for p in sorted(out.glob("references.*")):
+            deliverables.append({"kind": "library_export", "path": str(p),
+                                 "format": p.suffix.lstrip("."),
+                                 "bytes": p.stat().st_size,
+                                 "sha256": sha256(p)[:16]})
 
         uncertainty = []
         for name, c in checks.items():
-            if c.get("n_problems"):
-                uncertainty.append({"kind": "check", "detail": f"{name} 未通过：{c['n_problems']} 项"})
+            n = c.get("n_problems")
+            if isinstance(n, int) and n > 0:
+                uncertainty.append({"kind": "check",
+                                    "detail": f"{name} 未通过：{n} 项"})
         if numbering.get("unmapped_markers"):
             uncertainty.append({"kind": "marker",
                                 "detail": f"正文标记无对应条目：{numbering['unmapped_markers'][:5]}"})
         if numbering.get("dropped_ids"):
             uncertainty.append({"kind": "record",
                                 "detail": f"匹配到库外 id，已跳过：{numbering['dropped_ids'][:5]}"})
+        # 逐句核验的弱证据/歧义：进不确定项，不用 0 掩盖
+        for r in (src_audit.get("sentences") or [])[:60]:
+            if r.get("need_human"):
+                uncertainty.append({"kind": "source", "uid": r.get("uid"),
+                                    "detail": f"{r.get('verdict')}（{'/'.join(r.get('codes') or [])}）"
+                                              f"：{r.get('action')}"})
+        for r in (src_audit.get("entries") or []):
+            errs = [i for i in (r.get("issues") or []) if i.get("severity") == "error"]
+            if errs:
+                uncertainty.append({"kind": "metadata", "id": r.get("id"),
+                                    "detail": "；".join(i["note"] for i in errs)})
+        for sec in (coverage.get("sections") or []):
+            for u in sec.get("uncited_cite_uids") or []:
+                uncertainty.append({"kind": "cite_missing", "uid": u,
+                                    "detail": f"{sec.get('name')} 判定需引但未挂编号"})
 
         gaps = []
         auto = getattr(self, "auto", {}) or {}
@@ -561,7 +718,9 @@ class Runner:
             gaps.append({"kind": "auto",
                          "detail": f"句—库匹配由内置规则生成（{auto['match']['rule']}），"
                                    f"{auto['match']['n_assign']} 句配上、"
-                                   f"{auto['match']['n_none']} 句 NONE；不是模型判断"})
+                                   f"{auto['match']['n_none']} 句 NONE、"
+                                   f"{auto['match'].get('n_ambiguous', 0)} 句并列待确认；"
+                                   f"不是模型判断"})
         if not self.a.lib and self.a.refs:
             gaps.append({"kind": "input",
                          "detail": f"无 --lib 文献库输入：以空库为底并入稿件原有文献表，"
@@ -585,17 +744,46 @@ class Runner:
             if s["name"] == "9 写入 docx" and r.get("mismatch"):
                 gaps.append({"kind": "docx",
                              "detail": f"{r['mismatch']} 段文本与 prep 不一致，已跳过"})
+            if s["name"] == "1 建库":
+                for u in r.get("unparsed") or []:
+                    gaps.append({"kind": "format",
+                                 "detail": f"文献库文件未解析出条目：{u.get('path')}"
+                                           f"（{u.get('why')}）"})
+        for p in (dedupe.get("pairs") or []):
+            if p.get("decision") in ("keep_confirm", "conflict"):
+                gaps.append({"kind": "dedupe",
+                             "detail": f"{p.get('a')} / {p.get('b')}：{p.get('code')} "
+                                       f"{p.get('basis')}（未自动合并，需人工确认）"})
+        for g in prov.get("gaps") or []:
+            gaps.append({"kind": "provenance", "detail": g})
+        if not dedupe:
+            gaps.append({"kind": "step", "detail": "库内去重未产出：dedupe_audit.json 缺失"})
+        if not src_audit:
+            gaps.append({"kind": "step", "detail": "来源核验未产出：source_audit.json 缺失"})
+        if not coverage:
+            gaps.append({"kind": "step", "detail": "覆盖表未产出：coverage.json 缺失"})
 
         exceptions = [{"step": s["name"], "exit": s["exit"], "stderr": s["stderr"]}
                       for s in self.steps if not s["ok"] and s["name"] != "12 渲染预览"]
 
         fmap = self.fact_map(numbering, entries)
+        # 逐条引用补上核验结论与匹配分，事实与来源映射因此能回指到「为什么是这条」
+        sent_by_uid = {r.get("uid"): r for r in (src_audit.get("sentences") or [])}
+        for row in fmap:
+            uid = (row.get("anchor") or {}).get("uid")
+            srow = sent_by_uid.get(uid) or {}
+            if srow:
+                row["verification"] = {"verdict": srow.get("verdict"),
+                                       "codes": srow.get("codes"),
+                                       "top_score": srow.get("top_score"),
+                                       "ambiguous": srow.get("ambiguous"),
+                                       "need_human": srow.get("need_human")}
         result = {
             "case_id": case_id,
             "status": self.status,
             "blocked_at": self.blocked_at,
             "needs": self.needs,
-            "skill": {"name": "citation-manager", "version": "1.1.0"},
+            "skill": {"name": "citation-manager", "version": "1.2.0"},
             "inputs": {"docx": self.a.docx, "refs": self.a.refs, "lib": self.a.lib,
                        "pass1": self.a.pass1, "match": self.a.match},
             "deliverables": deliverables,
@@ -604,14 +792,49 @@ class Runner:
                                  "uncertainty": uncertainty,
                                  "material_gaps": gaps,
                                  "exceptions": exceptions},
-            "output_contract": self.echo_contract(contract, deliverables, checks, changes,
-                                                  fmap, gaps, uncertainty, exceptions),
-
             "numbering": {"mode": numbering.get("mode"), "n_refs": numbering.get("n_refs"),
                           "order": [{"n": r["n"], "id": r["id"]} for r in numbering.get("order", [])]},
             "规则命中": {k: {"规则": v.get("rule"), "条数": v.get("rows"),
                            "逐条": v.get("items")} for k, v in auto.items()},
             "checks": checks,
+            "input_snapshot": prov.get("inputs") or [],
+            "provenance": {"path": str(out / "provenance.json") if prov else None,
+                           "n_inputs": prov.get("n_inputs"),
+                           "n_refs": prov.get("n_refs"),
+                           "n_orphan": prov.get("n_orphan"),
+                           "n_changes_total": prov.get("n_changes_total"),
+                           "chain": (prov.get("chain") or [])[:20]},
+            "dedupe": {"n_in": dedupe.get("n_in"), "n_out": dedupe.get("n_out"),
+                       "n_pairs_examined": dedupe.get("n_pairs_examined"),
+                       "n_merged_pairs": dedupe.get("n_merged_pairs"),
+                       "n_kept": dedupe.get("n_kept"),
+                       "n_keep_confirm": dedupe.get("n_keep_confirm"),
+                       "n_conflict": dedupe.get("n_conflict"),
+                       "by_code": dedupe.get("by_code"),
+                       "merged": dedupe.get("merged_index") or [],
+                       "pairs": dedupe.get("pairs") or [],
+                       "rule_file": "rules/dedupe_rules.md"},
+            "coverage": {"totals": coverage.get("totals") or {},
+                         "sections": coverage.get("sections") or [],
+                         "multi_sentence_refs": coverage.get("multi_sentence_refs") or {},
+                         "entries": coverage.get("entries") or [],
+                         "manual": coverage.get("manual") or [],
+                         "path": str(out / "coverage.md") if coverage else None},
+            "source_audit": {"ok": src_audit.get("ok"),
+                             "n_entries": src_audit.get("n_entries"),
+                             "n_error": src_audit.get("n_error"),
+                             "n_warn": src_audit.get("n_warn"),
+                             "n_cites": src_audit.get("n_cites"),
+                             "verdict_counts": src_audit.get("verdict_counts"),
+                             "code_counts": src_audit.get("code_counts"),
+                             "n_need_human": src_audit.get("n_need_human"),
+                             "n_ambiguous": src_audit.get("n_ambiguous"),
+                             "n_missing_author": src_audit.get("n_missing_author"),
+                             "manual_items": src_audit.get("manual_items") or [],
+                             "sentences": src_audit.get("sentences") or [],
+                             "entries": src_audit.get("entries") or [],
+                             "limits": src_audit.get("limits") or [],
+                             "path": str(out / "source_audit.json") if src_audit else None},
             "sources": {"library": self.a.lib, "manuscript_refs": self.a.refs,
                         "rule_gbt": "GB/T 7714—2015",
                         "rule_source": "https://www.jsczz.cn/CN/column/column17.shtml"},
@@ -621,7 +844,82 @@ class Runner:
             "limits": LIMITS,
             "steps": self.steps,
         }
+
+        # 口径度量：与 score_run.py 同一实现，对照方可对基础 Agent 成品重算
+        metrics = {}
+        try:
+            import importlib.util as _u5
+            spec5 = _u5.spec_from_file_location("score_run", SCRIPTS / "score_run.py")
+            mod5 = _u5.module_from_spec(spec5)
+            spec5.loader.exec_module(mod5)
+            metrics = mod5.assemble(cited, num_json, getattr(self, "active_lib", None),
+                                    work / "source_audit.json",
+                                    work / "coverage.json", result=result)
+        except Exception as ex:      # 度量失败不影响成品
+            metrics = {"ok": False, "error": f"{type(ex).__name__}: {ex}"}
+        result["metrics"] = metrics
+        if metrics.get("ok"):
+            (out / "metrics.json").write_text(
+                json.dumps(metrics, ensure_ascii=False, indent=1), encoding="utf-8")
+            deliverables.append({"kind": "metrics", "path": str(out / "metrics.json"),
+                                 "format": "json",
+                                 "bytes": (out / "metrics.json").stat().st_size,
+                                 "sha256": sha256(out / "metrics.json")[:16]})
+        else:
+            gaps.append({"kind": "metrics", "detail": f"口径度量未生成：{metrics.get('error')}"})
+
+        result["output_contract"] = self.echo_contract(
+            contract, deliverables, checks, changes, fmap, gaps, uncertainty, exceptions,
+            extra={"coverage": {"n": len(coverage.get("manual") or []),
+                                "unit": "条目/句子覆盖",
+                                "items": coverage.get("manual") or []},
+                   "provenance": {"n": len(prov.get("inputs") or []), "unit": "file:sha256",
+                                  "items": prov.get("inputs") or []},
+                   "source_audit": {"n": src_audit.get("n_cites") or 0,
+                                    "unit": "uid + 判定码",
+                                    "items": src_audit.get("sentences") or []},
+                   "metrics": metrics})
+        result["output_contract_echo"] = getattr(self, "echo_status", {})
+
         p = out / "result.json"
+        # 样式合规检查：题面「格式转换与字段补齐」要求保留 DOI/卷期页/类型标识
+        try:
+            import importlib.util as _ilu
+            _sp = _ilu.spec_from_file_location(
+                "check_style", Path(__file__).resolve().parent / "scripts" / "check_style.py")
+            _cs = _ilu.module_from_spec(_sp)
+            _sp.loader.exec_module(_cs)
+            _bibp = None
+            for _c in (root / "refs.bib", root / "lib" / "sample_refs.bib"):
+                if _c.exists():
+                    _bibp = _c
+                    break
+            if _bibp is None:
+                _cands = sorted(root.rglob("*.bib"))
+                _bibp = _cands[0] if _cands else None
+            if _bibp is not None:
+                _sty = getattr(self, "style", "gbt7714")
+                _ents = _cs.parse_bib(_bibp.read_text(encoding="utf-8-sig", errors="replace"))
+                _rows, _okn = [], 0
+                for _k, _f in _ents.items():
+                    _e = _cs.norm_entry(_f)
+                    try:
+                        _rend, _ = _cs.load_styles().render(_e, _sty)
+                    except Exception:
+                        _rend = None
+                    _r = _cs.check_one(_e, _sty, _rend or "")
+                    _r["key"] = _k
+                    _okn += 1 if _r["ok"] else 0
+                    _rows.append({"key": _k, "ok": _r["ok"], "gaps": _r["gaps"]})
+                result["样式合规"] = {"style": _sty, "entries": len(_rows), "ok": _okn,
+                                 "rate": round(_okn / len(_rows), 3) if _rows else None,
+                                 "rows": _rows}
+                if _rows and _okn < len(_rows):
+                    gaps.append(f"样式 {_sty} 合规 {_okn}/{len(_rows)} 条，"
+                                f"缺口见 result.json 样式合规")
+        except Exception as _ex:
+            gaps.append(f"样式合规检查未完成：{type(_ex).__name__}")
+
         # 题面：result.json 含全部 output_contract 字段 → 平铺到顶层
         for _k, _v in (result.get("output_contract") or {}).items():
             result.setdefault(_k, _v)
@@ -635,7 +933,10 @@ class Runner:
         rep = {"case_id": case_id, "status": self.status,
                "steps": [{"name": s["name"], "ok": s["ok"], "exit": s["exit"]} for s in self.steps],
                "checks": checks, "n_changes": len(changes),
-               "n_fact_rows": len(result["fact_source_map"])}
+               "n_fact_rows": len(result["fact_source_map"]),
+               "n_gaps": len(gaps), "n_uncertainty": len(uncertainty),
+               "metrics": {k: metrics.get(k) for k in ("manual_review", "quality")
+                           if k in metrics}}
         (out / "report.json").write_text(json.dumps(rep, ensure_ascii=False, indent=1),
                                          encoding="utf-8")
 

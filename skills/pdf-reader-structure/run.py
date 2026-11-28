@@ -3,14 +3,16 @@
 """run.py — 文献文档解析 Skill 的编排入口。
 
 输入：/input（case.json、task.md、PDF）
-输出：/app/output（parsed.md、blocks.json、sections.json、tables/、result.json）
+输出：/app/output（parsed.md、blocks.json、sections.json、tables/、formulas.md、
+      figures.md、footnotes.md、result.json）
 
 步骤：
   0 读输入：case.json 的 case_id 与 output_contract，嗅探 PDF
-  1 解析：pdfparse（栏、行、页眉页脚、标题层级、表格网格、公式编号）
-  2 组装：parsed.md（阅读顺序）+ sections.json（层级）+ tables/*.md
-  3 自检：页覆盖、表格列数、未解析页、乱码比例
-  4 落盘：result.json（契约回显 + 证据 + 边界）
+  1 解析：pdfparse（栏、行、页眉页脚、标题层级、表格网格、公式行重建、图片对象框）
+  2 后处理：postpass（脚注、段落与跨页续接、图与题注配对、表格未归属文字）
+  3 组装：parsed.md（阅读顺序）+ sections.json（层级）+ tables/*.md + 三份清单
+  4 自检：页覆盖、表格列数、表格归属、公式原文保真、页眉页脚剔除、块依据
+  5 落盘：result.json（契约回显 + 证据 + 边界）
 
 用法：
   python run.py --input /input --work /app/work --out /app/output
@@ -40,7 +42,7 @@ def _utf8() -> None:
 
 
 def load(path: Path):
-    spec = importlib.util.spec_from_file_location("pdfparse", path)
+    spec = importlib.util.spec_from_file_location(path.stem, path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -129,7 +131,16 @@ def docmeta(pages: list[dict]) -> dict:
     return meta
 
 
-def to_markdown(pages: list[dict]) -> tuple[str, list[str]]:
+def _bbox(bb) -> str:
+    try:
+        return "[" + ", ".join(("%.1f" % float(v)) for v in bb) + "]"
+    except Exception:
+        return "[]"
+
+
+def to_markdown(pages: list[dict], figures: list[dict],
+                notes: list[dict]) -> tuple[str, list[str]]:
+    """阅读顺序正文。表格给网格，公式给"行内标记 + 逐字原文"，图给位置，脚注按页列。"""
     lines: list[str] = []
     gaps: list[str] = []
     for p in pages:
@@ -138,38 +149,130 @@ def to_markdown(pages: list[dict]) -> tuple[str, list[str]]:
             gaps.append(f"第 {p['page']} 页没有文字层")
             lines.append("_（本页无可提取文字层）_\n")
             continue
+        for f in figures:
+            if f.get("page") != p["page"] or f.get("kind") != "image":
+                continue
+            lines.append(f"<!-- 图 页 {f['page']} bbox={_bbox(f['bbox'])} "
+                         f"{f.get('width')}×{f.get('height')} pt "
+                         f"题注={f.get('caption') or '（60 pt 内无图类题注）'} -->")
         for b in p["blocks"]:
             role = b["role"]
-            if role in ("header", "footer", "page_number"):
-                continue
+            if role in ("header", "footer", "page_number", "footnote"):
+                continue                                    # 脚注在页末单独列
+            if b.get("continued_from"):
+                lines.append(f"<!-- 跨页续接：页 {b['continued_from']} → 页 {p['page']}，"
+                             f"段 {b.get('para')} 接着上页未收尾的正文 -->")
             if role == "title":
                 lines.append("# " + b["text"] + "\n")
             elif role == "heading":
                 lines.append("#" * min(int(b.get("level") or 3), 6) + " " + b["text"] + "\n")
             elif role == "table":
-                lines.append(b.get("markdown") or "") 
+                lines.append(b.get("markdown") or "")
                 lines.append("")
             elif role == "caption":
                 lines.append("**" + b["text"] + "**\n")
             elif role == "formula":
-                lines.append("$$ " + b["text"] + " $$\n")
+                lines.append("$$ " + (b.get("inline") or b["text"]) + " $$")
+                lines.append("")
+                lines.append(f"> 公式 ({b.get('formula_no') or '?'}) 原文："
+                             f"{b.get('original') or b['text']}｜bbox {_bbox(b['bbox'])}｜"
+                             f"上下标 {len(b.get('scripts') or [])} 个｜"
+                             f"特殊符号 {len(b.get('symbols') or [])} 个\n")
             else:
                 lines.append(b["text"])
+        fn = [n for n in notes if n["page"] == p["page"]]
+        for n in fn:
+            lines.append(f"<!-- 脚注 页 {n['page']} 标记 {n['marker']} "
+                         f"{n['size']}pt bbox={_bbox(n['bbox'])} -->")
+            lines.append(f"- 脚注 {n['marker']}：{n['text']}")
         lines.append("")
     return "\n".join(lines), gaps
 
 
-def write_result(out: Path, case_id: str, contract: dict, res: dict,
-                 sections: list[dict], tables: list[dict], md_path: Path,
-                 gaps: list[str], stats: dict, checks: dict,
-                 doc: dict, refs: list[str], blocks: list[dict],
-                 status: str) -> Path:
-    def pointer(kind: str) -> dict:
-        return {"kind": kind, "path": str(out / kind), "bytes": (out / kind).stat().st_size
-                if (out / kind).exists() else 0}
+def _pointer(out: Path, kind: str) -> dict:
+    p = out / kind
+    return {"kind": kind, "path": str(p), "bytes": p.stat().st_size if p.exists() else 0}
 
-    deliverables = [pointer("parsed.md"), pointer("blocks.json"),
-                    pointer("sections.json")]
+
+def write_md(out: Path, name: str, body: str) -> Path:
+    p = out / name
+    p.write_text(body, encoding="utf-8")
+    return p
+
+
+def formulas_md(formulas: list[dict]) -> str:
+    head = ["# 公式原文对照（按编号）", "",
+            "编号取自行尾 `(n)`；`逐字原文` 是字符块按 x 顺序的原样拼接（不改字），",
+            "`行内标记` 把小于正文 88% 字号、且基线抬高/降低的字符块标成 `^{}` / `_{}`。", "",
+            "| 编号 | 页 | bbox | 逐字原文 | 行内标记 | 上下标 | 特殊符号 | 字符块 |",
+            "|-|-|-|-|-|-|-|-|"]
+    for f in formulas:
+        scr = ", ".join("%s%s" % (s["text"], "↑" if s["kind"] == "sup" else "↓")
+                        for s in f.get("scripts") or []) or "—"
+        sym = ", ".join("%s(%s)" % (s["char"], s["cp"]) for s in f.get("symbols") or []) or "—"
+        head.append("| %s | %s | %s | %s | %s | %s | %s | %s |" % (
+            f.get("no") or "?", f["page"], _bbox(f["bbox"]),
+            (f.get("original") or "").replace("|", "\\|"),
+            (f.get("inline") or "").replace("|", "\\|"), scr, sym,
+            len(f.get("chunks") or [])))
+    if not formulas:
+        head.append("| — | — | — | 本文未检出带编号的公式 | — | — | — | 0 |")
+    for f in formulas:
+        head += ["", "## 公式 (%s)｜页 %s" % (f.get("no") or "?", f["page"]), "",
+                 "字符块（依据，坐标为 visitor 实测）：", "",
+                 "| x | y | 字号 | 文本 |", "|-|-|-|-|"]
+        for c in f.get("chunks") or []:
+            head.append("| %s | %s | %s | %s |" % (c["x"], c["y"], c["size"],
+                                                   (c["text"] or "").replace("|", "\\|")))
+    return "\n".join(head) + "\n"
+
+
+def figures_md(figures: list[dict]) -> str:
+    head = ["# 图表清单（位置 + 题注配对）", "",
+            "`image` 行是内容流 `cm`/`Do` 还原出的图片对象框；`caption-only` 行只有题注、",
+            "本页未检出图片对象（矢量图形），如实标注不补框。", "",
+            "| 页 | 类型 | bbox | 宽×高(pt) | 题注 | 关系 | 间距(pt) | 说明 |",
+            "|-|-|-|-|-|-|-|-|"]
+    for f in figures:
+        head.append("| %s | %s | %s | %s×%s | %s | %s | %s | %s |" % (
+            f.get("page"), f.get("kind"), _bbox(f.get("bbox") or []),
+            f.get("width"), f.get("height"),
+            (f.get("caption") or "—").replace("|", "\\|"),
+            f.get("caption_relation") or "—",
+            "—" if f.get("caption_gap") is None else f.get("caption_gap"),
+            (f.get("note") or "").replace("|", "\\|")))
+    if not figures:
+        head.append("| — | — | — | — | 本文未检出图片对象与图类题注 | — | — | — |")
+    return "\n".join(head) + "\n"
+
+
+def footnotes_md(notes: list[dict]) -> str:
+    head = ["# 脚注清单", "",
+            "判据：页面下部 20% 以内、字号 ≤ 正文 92%、行首带 `*` `†` `‡` `§` `¶` 或 1–2 位数字标记。",
+            "`正文是否引用` 一列：符号标记回正文找 `字+标记`；数字标记与上标无法区分，记 `?` 并写明原因。", "",
+            "| 页 | 标记 | 字号 | 占比 | bbox | 原文 | 正文是否引用 |",
+            "|-|-|-|-|-|-|-|"]
+    for n in notes:
+        head.append("| %s | %s | %s | %s | %s | %s | %s |" % (
+            n["page"], n["marker"], n["size"], n["size_ratio"], _bbox(n["bbox"]),
+            (n["text"] or "").replace("|", "\\|"),
+            "?" if n["referenced_in_body"] is None else ("是" if n["referenced_in_body"] else "否")))
+    if not notes:
+        head.append("| — | — | — | — | — | 本文未检出脚注 | — |")
+    return "\n".join(head) + "\n"
+
+
+def write_result(out: Path, case_id: str, contract: dict, res: dict, pack: dict) -> Path:
+    """result.json：主结果 + 证据 + 边界 + 规则命中 + 契约回显。"""
+    sections, tables, blocks = pack["sections"], pack["tables"], pack["blocks"]
+    gaps, stats, checks, doc = pack["gaps"], pack["stats"], pack["checks"], pack["doc"]
+    refs, status = pack["refs"], pack["status"]
+    formulas, figures = pack["formulas"], pack["figures"]
+    notes, paras = pack["footnotes"], pack["paragraphs"]
+    orphans = pack["orphans"]
+    deliverables = [_pointer(out, "parsed.md"), _pointer(out, "blocks.json"),
+                    _pointer(out, "sections.json"), _pointer(out, "formulas.md"),
+                    _pointer(out, "figures.md"), _pointer(out, "footnotes.md")]
     for t in tables:
         p = out / t["path"]
         if p.exists():
@@ -178,8 +281,10 @@ def write_result(out: Path, case_id: str, contract: dict, res: dict,
                                  "n_cols": t["n_cols"]})
     measured = sum(1 for b in blocks if not b.get("bbox_est"))
     estimated = sum(1 for b in blocks if b.get("bbox_est"))
-    # 契约字段装真实内容：解析出的标题/章节/表/公式/参考文献数与样本框，
-    # 不是文件名，也不是"见某文件"。
+    why = {}
+    for b in blocks:
+        why[b.get("why") or "?"] = why.get(b.get("why") or "?", 0) + 1
+    # 契约字段装真实内容：解析出的标题/章节/表/公式/图表/脚注与样本框，不是文件名。
     payload = {
         "parsed": {"pages": res["n_pages"],
                    "title": doc["title"], "authors": doc["authors"],
@@ -187,15 +292,27 @@ def write_result(out: Path, case_id: str, contract: dict, res: dict,
                    "abstract_chars": len(doc["abstract"]),
                    "headings": [b["text"] for b in blocks if b["role"] == "heading"][:12],
                    "tables": [{"page": t["page"], "n_rows": t["n_rows"],
-                               "n_cols": t["n_cols"]} for t in tables],
-                   "formulas": [{"page": b["page"], "no": b.get("formula_no"),
-                                 "text": b["text"]}
-                                for b in blocks if b["role"] == "formula"],
+                               "n_cols": t["n_cols"],
+                               "cells_filled": t.get("cells_filled")} for t in tables],
+                   "formulas": [{"page": f["page"], "no": f.get("no"),
+                                 "original": f.get("original"),
+                                 "inline": f.get("inline"),
+                                 "scripts": len(f.get("scripts") or []),
+                                 "symbols": len(f.get("symbols") or [])}
+                                for f in formulas],
+                   "figures": [{"page": f["page"], "kind": f["kind"],
+                                "bbox": f["bbox"], "caption": f.get("caption")}
+                               for f in figures],
+                   "footnotes": [{"page": n["page"], "marker": n["marker"],
+                                  "text": n["text"]} for n in notes],
+                   "paragraphs": len(paras),
                    "references": len(refs)},
-        "evidence": {"unit": "page+bbox",
+        "evidence": {"unit": "page+bbox+para",
                      "measured_blocks": measured, "estimated_blocks": estimated,
                      "sample": [{"page": b["page"], "role": b["role"],
-                                 "bbox": b["bbox"]} for b in blocks[:3]],
+                                 "bbox": b["bbox"], "para": b.get("para"),
+                                 "why": b.get("why")} for b in blocks[:3]],
+                     "formula_evidence": "formulas.md 逐条列字符块的 x/y/字号/文本",
                      "checks": checks, "gaps": gaps},
         "status": {"status": status,
                    "reason": gaps[0] if gaps else "全部页面解析成功，无 gap",
@@ -203,19 +320,12 @@ def write_result(out: Path, case_id: str, contract: dict, res: dict,
         "goals": [{"kind": d["kind"], "bytes": d["bytes"]} for d in deliverables],
         "map": {"sections": [{"title": s["title"], "level": s["level"], "page": s["page"]}
                              for s in sections],
-                "references": refs[:8]},
-        "bounds": {"skill_version": "1.1.0", "gaps": gaps,
-                   "bbox_estimated_blocks": estimated},
-        "规则命中": {
-            "块角色": {r: sum(1 for b in blocks if b["role"] == r)
-                    for r in sorted({b["role"] for b in blocks})},
-            "栏数": [p.get("columns") for p in res.get("pages", [])],
-            "表格网格": [{"page": t["page"], "n_rows": t["n_rows"], "n_cols": t["n_cols"]}
-                     for t in tables],
-            "bbox": {"实测": measured, "推算": estimated},
-            "规则": "块角色按字号/字号比与位置判；表格按线框与行聚类；"
-                    "bbox 优先用字符坐标，段文本对不上时用推算框并标 bbox_est",
-        },
+                "references": refs[:8],
+                "figures": [{"page": f["page"], "caption": f.get("caption")} for f in figures[:8]],
+                "footnotes": [{"page": n["page"], "marker": n["marker"]} for n in notes[:8]]},
+        "bounds": {"skill_version": "1.2.0", "gaps": gaps,
+                   "bbox_estimated_blocks": estimated,
+                   "no_ocr": True, "no_cross_page_table_merge": True},
     }
     rules = [
         # 平台字段名精确匹配（先于模糊规则）
@@ -224,13 +334,17 @@ def write_result(out: Path, case_id: str, contract: dict, res: dict,
         (r"^证据与边界", "evidence", "full" if measured else "partial"),
         (r"^运行状态", "status", "full"),
         (r"^目标产物", "goals", "full" if deliverables else "partial"),
-        (r"^事实与来源映射", "map", "full" if (sections or refs) else "partial"),
+        (r"^事实与来源映射", "map", "full" if (sections or refs or figures) else "partial"),
         (r"^版本与边界", "bounds", "full"),
+        (r"公式|formula|equation", "parsed", "full" if formulas else "partial"),
+        (r"图表|插图|figure", "parsed", "full" if figures else "partial"),
+        (r"脚注|footnote", "parsed", "full" if notes else "partial"),
+        (r"段落|paragraph|跨页|continuation", "parsed", "full" if paras else "partial"),
         (r"text|markdown|正文|全文|parsed", "parsed",
          "full" if res["n_pages"] else "partial"),
         (r"(?<!re)table|表格", "tables", "full" if tables else "partial"),
         (r"section|章节|结构|heading", "map", "full" if sections else "partial"),
-        (r"block|布局|layout|span", "evidence", "full" if measured else "partial"),
+        (r"block|布局|layout|span|bbox|定位", "evidence", "full" if measured else "partial"),
     ]
     echo, echo_status = {}, {}
     for key in contract:
@@ -257,23 +371,43 @@ def write_result(out: Path, case_id: str, contract: dict, res: dict,
         "docmeta": doc,
         "stats": stats,
         "sections": sections,
-        "tables": [{k: t[k] for k in ("no", "page", "n_rows", "n_cols", "path")}
+        "tables": [{k: t[k] for k in ("no", "page", "n_rows", "n_cols", "path",
+                                      "cells_total", "cells_filled", "n_assigned",
+                                      "lines", "bbox") if k in t}
                    for t in tables],
-        "formulas": [{"page": b["page"], "no": b.get("formula_no"), "text": b["text"],
-                      "bbox": b["bbox"]}
-                     for b in blocks if b["role"] == "formula"],
-        "figures": [{"page": b["page"], "text": b["text"], "bbox": b["bbox"]}
-                    for b in blocks if b["role"] == "caption"],
+        "table_unassigned": orphans,
+        "formulas": formulas,
+        "figures": figures,
+        "footnotes": notes,
+        "paragraphs": paras,
         "references": [{"page": b["page"], "text": b["text"]}
                        for b in blocks if b["role"] == "reference"],
         "deliverables": deliverables,
-        "evidence": {"unit": "page+bbox", "blocks": "blocks.json",
-                     "note": "每个 block 带页码与 bbox：未标 bbox_est 的是 visitor_text "
-                             "实测坐标，标 bbox_est 的是段文本未能匹配字符块的推算框"},
+        "evidence": {"unit": "page+bbox+para", "blocks": "blocks.json",
+                     "note": "每个 block 带页码、bbox 与 why（判据名）：未标 bbox_est 的是 "
+                             "visitor_text 实测坐标，标 bbox_est 的是段文本未能匹配字符块的"
+                             "推算框；para 是段号，continued_from 记跨页续接的上一页"},
         "gaps": gaps,
         "checks": checks,
-        "规则命中": payload["规则命中"],
-        "output_contract": echo,
+        "规则命中": {
+            "块角色": {r: sum(1 for b in blocks if b["role"] == r)
+                    for r in sorted({b["role"] for b in blocks})},
+            "依据分布": why,
+            "栏数": [p.get("columns") for p in res.get("pages", [])],
+            "表格网格": [{"page": t["page"], "n_rows": t["n_rows"], "n_cols": t["n_cols"],
+                      "lines": t.get("lines"), "cells_filled": t.get("cells_filled"),
+                      "n_assigned": t.get("n_assigned")} for t in tables],
+            "公式行重建": [{"page": f["page"], "no": f.get("no"),
+                       "scripts": f.get("scripts"), "chunks": len(f.get("chunks") or [])}
+                      for f in formulas],
+            "图片对象": [{"page": f["page"], "name": f.get("name"), "bbox": f["bbox"],
+                      "caption_gap": f.get("caption_gap")} for f in figures
+                     if f.get("kind") == "image"],
+            "脚注判据": "页下部 20%、字号 ≤ 正文 92%、行首符号标记；符号回正文找引用",
+            "bbox": {"实测": measured, "推算": estimated},
+            "规则": "块角色按字号/字号比与位置判；表格按线框连通区域 + 中心点入格；"
+                    "公式按字符块字号与基线重建上下标；图片框按内容流 CTM 还原",
+        },
     }
     result["阅读/解析结果"] = payload["parsed"]
     result["证据与边界"] = payload["evidence"]
@@ -328,7 +462,7 @@ def main(argv: list[str] | None = None) -> int:
                 "status": "blocked",
                 "error": "输入目录里没有 PDF",
                 "deliverables": ["missing_input.md"],
-                "evidence": {"unit": "page+bbox", "note": "未解析，无证据"},
+                "evidence": {"unit": "page+bbox+para", "note": "未解析，无证据"},
                 "checks": {},
                 "gaps": ["输入目录里没有 PDF"],
                 "output_contract": {k: {"note": "未运行", "pointer": []} for k in contract},
@@ -379,20 +513,31 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
     parser = load(Path(__file__).parent / "scripts" / "pdfparse.py")
+    post = load(Path(__file__).parent / "scripts" / "postpass.py")
     res = parser.parse(pdf)
     (work / "parse_raw.json").write_text(json.dumps(res, ensure_ascii=False),
                                          encoding="utf-8")
 
     pages = res["pages"]
+    # 后处理只标关系，不改字：单页页眉页脚、脚注、段落与跨页续接、
+    # 图与题注配对、表格未归属文字
+    single_heads = post.single_page_heads(pages)
+    notes = post.footnotes(pages)
+    paras = post.paragraphs(pages)
+    figures = post.link_figures(res.get("figures") or [], pages)
+    orphans = post.table_orphans(pages)
+
     blocks = [b for p in pages for b in p["blocks"]]
     sections = build_sections(pages)
     doc = docmeta(pages)
     refs = [b["text"] for b in blocks if b["role"] == "reference"]
-    md, gaps = to_markdown(pages)
+    md, gaps = to_markdown(pages, figures, notes)
     (out / "parsed.md").write_text(md, encoding="utf-8")
 
-    flat = [{k: b[k] for k in ("page", "role", "text", "bbox")} | {"size": b.get("size")}
-            for b in blocks]
+    keys = ("page", "role", "text", "bbox", "size", "line", "col", "why",
+            "bbox_est", "level", "formula_no", "para", "continued_from", "marker",
+            "original", "inline")
+    flat = [{k: b[k] for k in keys if k in b} for b in blocks]
     (out / "blocks.json").write_text(json.dumps(flat, ensure_ascii=False, indent=1),
                                      encoding="utf-8")
     (out / "sections.json").write_text(json.dumps(sections, ensure_ascii=False, indent=1),
@@ -407,9 +552,22 @@ def main(argv: list[str] | None = None) -> int:
             tables.append({"no": len(tables) + 1, "page": b["page"], "n_rows": b["n_rows"],
                            "n_cols": b["n_cols"], "rows": b["rows"],
                            "markdown": b["markdown"], "bbox": b["bbox"],
+                           "cells_total": b.get("cells_total"),
+                           "cells_filled": b.get("cells_filled"),
+                           "n_assigned": b.get("n_assigned"),
+                           "lines": b.get("lines"),
+                           "unassigned": b.get("unassigned") or [],
+                           "why": b.get("why"),
                            "path": f"tables/table{len(tables) + 1}.md"})
             tdir.mkdir(parents=True, exist_ok=True)
             (out / tables[-1]["path"]).write_text(b["markdown"] + "\n", encoding="utf-8")
+
+    formulas = [{"page": b["page"], "no": b.get("formula_no"), "bbox": b["bbox"],
+                 "text": b["text"], "original": b.get("original") or b["text"],
+                 "inline": b.get("inline") or b["text"],
+                 "scripts": b.get("scripts") or [], "symbols": b.get("symbols") or [],
+                 "chunks": b.get("chunks") or [], "why": b.get("why")}
+                for b in blocks if b["role"] == "formula"]
 
     if res["n_pages"] == 0:
         gaps.append("PDF 未解析出任何页面（页树为空或页面对象损坏）")
@@ -438,6 +596,18 @@ def main(argv: list[str] | None = None) -> int:
     if cjk_chars > 0:
         gaps.append(f"中文页共 {cjk_chars} 字：CJK 无词间空格，标题行分段以字距为准，"
                     "标题层级需人工核对")
+    # 表格里落不进任何单元格的文字：如实列出，不猜、不并进相邻格
+    if orphans:
+        by_page = {}
+        for o in orphans:
+            by_page.setdefault(o["page"], 0)
+            by_page[o["page"]] += 1
+        gaps.append("表格未归属文字：" + "；".join(
+            f"第 {pg} 页 {n} 块" for pg, n in sorted(by_page.items()))
+            + "（原文列出，未并入相邻单元格）")
+    for n in notes:
+        if n["referenced_in_body"] is False:
+            gaps.append(f"第 {n['page']} 页脚注标记 {n['marker']} 未在正文块中找到引用")
 
     body = [b for b in blocks if b["role"] == "body"]
     moji = sum(len(MOJI.findall(b["text"])) for b in body)
@@ -445,12 +615,20 @@ def main(argv: list[str] | None = None) -> int:
     stats = {"pages": res["n_pages"], "parsed_pages": res["pages_parsed"],
              "blocks": len(blocks), "body_blocks": len(body),
              "headings": sum(1 for b in blocks if b["role"] == "heading"),
-             "tables": len(tables), "formulas": sum(1 for b in blocks if b["role"] == "formula"),
+             "tables": len(tables), "formulas": len(formulas),
+             "formula_scripts": sum(len(f["scripts"]) for f in formulas),
+             "formula_symbols": sum(len(f["symbols"]) for f in formulas),
              "captions": sum(1 for b in blocks if b["role"] == "caption"),
+             "figures": sum(1 for f in figures if f["kind"] == "image"),
+             "figure_caption_only": sum(1 for f in figures if f["kind"] == "caption-only"),
+             "footnotes": len(notes),
+             "paragraphs": len(paras),
+             "cross_page_paragraphs": sum(1 for r in paras if r["cross_page"]),
              "references": sum(1 for b in blocks if b["role"] == "reference"),
              "headers": sum(1 for b in blocks if b["role"] == "header"),
              "footers": sum(1 for b in blocks if b["role"] == "footer"),
              "bbox_estimated": sum(1 for b in blocks if b.get("bbox_est")),
+             "table_unassigned": len(orphans),
              "columns": [p["columns"] for p in pages],
              "chars": chars, "mojibake_ratio": round(moji / chars, 4),
              "elapsed_s": round(time.time() - t0, 2)}
@@ -459,6 +637,7 @@ def main(argv: list[str] | None = None) -> int:
 
     hf = [b["text"] for b in blocks if b["role"] in ("header", "footer")]
     leaked = [t for t in hf if t and t in md]
+    ok_formula = sum(1 for f in formulas if f["original"] in md)
     checks = {
         "页覆盖": {"ok": res["pages_parsed"] == res["n_pages"],
                    "detail": f"{res['pages_parsed']}/{res['n_pages']}"},
@@ -469,6 +648,14 @@ def main(argv: list[str] | None = None) -> int:
                            "detail": f"header={stats['headers']} footer={stats['footers']}；"
                                      f"parsed.md 残留={len(leaked)}；"
                                      "为 0 表示未检出（无页眉页脚或未识别），不等同于已剔除"},
+        "公式原文保真": {"ok": ok_formula == len(formulas),
+                         "detail": f"parsed.md 里原文逐字出现的公式 {ok_formula}/{len(formulas)}；"
+                                   "上下标 " + str(stats["formula_scripts"]) + " 个"},
+        "表格单元归属": {"ok": not orphans,
+                         "detail": f"未归属文字 {len(orphans)} 块"
+                                   + ("（已列进 gaps 与 result.json）" if orphans else "")},
+        "区块均有依据": {"ok": all(b.get("why") for b in blocks),
+                         "detail": f"{sum(1 for b in blocks if b.get('why'))}/{len(blocks)} 块带 why"},
     }
 
     # 读不出的页要有一份可读清单：哪几页、为什么读不出、需要什么才能继续。
@@ -479,7 +666,8 @@ def main(argv: list[str] | None = None) -> int:
               + ([{"page": 0, "reason": "整份 PDF 未解析出页面（页树为空或页面对象损坏）"}]
                  if res["n_pages"] == 0 else []))
     text_found = bool(body) or any(b["role"] in ("title", "heading", "table", "caption",
-                                                 "reference") for b in blocks)
+                                                 "reference", "formula", "footnote")
+                                   for b in blocks)
     status = ("success" if res["ok"] and res["pages_parsed"] > 0 and text_found
               else "partial")
     if unread or status != "success":
@@ -496,11 +684,21 @@ def main(argv: list[str] | None = None) -> int:
                       "缺的部分按页留空并在此说明。"]
         (out / "unreadable.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    rp = write_result(out, case_id, contract, res, sections, tables, out / "parsed.md",
-                      gaps, stats, checks, doc, refs, blocks, status)
+    # 三份清单：公式编号对照、图表位置、脚注
+    write_md(out, "formulas.md", formulas_md(formulas))
+    write_md(out, "figures.md", figures_md(figures))
+    write_md(out, "footnotes.md", footnotes_md(notes))
+
+    pack = {"sections": sections, "tables": tables, "blocks": blocks, "gaps": gaps,
+            "stats": stats, "checks": checks, "doc": doc, "refs": refs,
+            "status": status, "formulas": formulas, "figures": figures,
+            "footnotes": notes, "paragraphs": paras, "orphans": orphans}
+    rp = write_result(out, case_id, contract, res, pack)
     print(json.dumps({"ok": True, "status": status,
                       "case_id": case_id, "result": str(rp),
-                      "tables": len(tables), "gaps": len(gaps),
+                      "tables": len(tables), "formulas": len(formulas),
+                      "figures": stats["figures"], "footnotes": len(notes),
+                      "paragraphs": len(paras), "gaps": len(gaps),
                       "elapsed_s": stats["elapsed_s"]}, ensure_ascii=False))
     return 0
 

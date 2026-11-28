@@ -1,3 +1,5 @@
-﻿| 原文 | 译文 |
+| 原文 | 译文 |
 |-|-|
-| working memory | 工作记忆 |
+| recovery | 恢复 |
+| participants | 被试 |
+| decline | 下降 |

@@ -1,0 +1,183 @@
+{
+  "version": "2.0.0",
+  "updated": "2026-02-14",
+  "note": "受控关系词表。run.py 启动时读取本文件；读不到时退回内置副本并在 gaps 里记明。改词表只改这里，rules/relations.md 是人读副本。",
+  "causal_priority": ["causes"],
+  "relations": [
+    {
+      "key": "increases",
+      "zh": "增加/提高/改善/增强",
+      "direction": "up",
+      "inverse": "decreases",
+      "definition": "主体使客体在某个报告的量上变大。方向词必须出现在证据片段内，否则不得判为 increases。",
+      "evidence_policy": "片段须含主体、方向词、客体；若方向词在片段外，判 evidence_insufficient。",
+      "patterns": [
+        {"re": "显著(提高|提升|增加|改善|增强)", "conf": 0.9},
+        {"re": "(提高|提升|增加|改善|增强)(了)?", "conf": 0.6},
+        {"re": "\\b(significantly\\s+)?(increas|rais|improv|enhanc|boost)(e|es|ed|ing)?\\b", "conf": 0.8}
+      ]
+    },
+    {
+      "key": "decreases",
+      "zh": "降低/减少/下降/削弱/抑制",
+      "direction": "down",
+      "inverse": "increases",
+      "definition": "主体使客体在某个报告的量上变小。",
+      "evidence_policy": "片段须含主体、方向词、客体；否定词覆盖方向词时 polarity=negated，不得按方向直读。",
+      "patterns": [
+        {"re": "显著(降低|减少|下降|削弱|抑制)", "conf": 0.9},
+        {"re": "(降低|减少|下降|削弱|抑制)(了)?", "conf": 0.6},
+        {"re": "\\b(significantly\\s+)?(decreas|reduc|diminish|suppress)(e|es|ed|ing)?\\b", "conf": 0.8},
+        {"re": "\\b(significantly\\s+)?lower\\b", "conf": 0.6}
+      ]
+    },
+    {
+      "key": "outperforms",
+      "zh": "优于/高于/好于/领先于",
+      "direction": "better",
+      "inverse": "underperforms",
+      "definition": "主体在某个可比指标上强于客体；客体是参照组或参照方法。",
+      "evidence_policy": "比较方向取决于关系词本身，不得把「低于」记成 outperforms。",
+      "patterns": [
+        {"re": "(优于|高于|好于|领先于|强于)", "conf": 0.8},
+        {"re": "\\b(outperform|exceed|surpass|better than)\\b", "conf": 0.8},
+        {"re": "\\bsuperior\\b", "conf": 0.7}
+      ]
+    },
+    {
+      "key": "underperforms",
+      "zh": "低于/劣于/不如/弱于",
+      "direction": "worse",
+      "inverse": "outperforms",
+      "definition": "主体在某个可比指标上弱于客体。",
+      "evidence_policy": "同 outperforms，方向由关系词决定。",
+      "patterns": [
+        {"re": "(低于|劣于|不如|弱于)", "conf": 0.8},
+        {"re": "\\b(underperform|worse than|inferior to)\\b", "conf": 0.8},
+        {"re": "\\binferior\\b", "conf": 0.7}
+      ]
+    },
+    {
+      "key": "uses",
+      "zh": "采用/使用/基于/利用",
+      "direction": "method",
+      "inverse": "",
+      "definition": "主体采用客体作为方法、工具、任务或指标。",
+      "evidence_policy": "客体通常是方法名词；若客体是整句，判宽并交人工收窄。",
+      "patterns": [
+        {"re": "(采用|使用|基于|利用)", "conf": 0.7},
+        {"re": "\\b(use|employ|adopt)(s|d|ed|ing)?\\b", "conf": 0.7},
+        {"re": "\\bbased\\s+(solely\\s+|mainly\\s+|primarily\\s+|entirely\\s+)?on\\b", "conf": 0.7}
+      ]
+    },
+    {
+      "key": "measures",
+      "zh": "测量/评估/检验/验证/测定",
+      "direction": "method",
+      "inverse": "",
+      "definition": "主体测量或评估客体。",
+      "evidence_policy": "客体应为被测量的量或指标。",
+      "patterns": [
+        {"re": "(测量|评估|检验|验证|测定)", "conf": 0.7},
+        {"re": "\\b(measur|assess|evaluat|verif|quantif)(e|es|ed|ing)\\b", "conf": 0.7}
+      ]
+    },
+    {
+      "key": "causes",
+      "zh": "导致/引起/造成/施加影响",
+      "direction": "causal",
+      "inverse": "",
+      "definition": "主体是原因，客体是结果或受影响的对象；句内同时出现多个关系词时因果类优先。",
+      "evidence_policy": "证据片段须同时含原因与结果两侧；只含一侧判 evidence_insufficient。",
+      "patterns": [
+        {"re": "(导致|引起|造成|使得)", "conf": 0.7},
+        {"re": "\\b(caus|lead to|result in|induc)(e|es|ed|ing)?\\b", "conf": 0.7},
+        {"re": "\\bexerts?\\b[^.]{0,40}\\binfluences?\\b", "conf": 0.65},
+        {"re": "\\bimposes?\\b[^.]{0,50}\\beffects?\\b", "conf": 0.65}
+      ]
+    },
+    {
+      "key": "correlates_with",
+      "zh": "相关/关联/伴随",
+      "direction": "assoc",
+      "inverse": "",
+      "definition": "主体与客体共同变化；不得读成因果。",
+      "evidence_policy": "片段须含相关系数或「相关」类词；负相关要另记 sign=negative。",
+      "patterns": [
+        {"re": "(相关|关联|伴随)", "conf": 0.5},
+        {"re": "\\b(correlat|associat)(e|es|ed|ing|ion)\\b", "conf": 0.6},
+        {"re": "\\bassociations?\\s+between\\b", "conf": 0.5}
+      ]
+    },
+    {
+      "key": "predicts",
+      "zh": "预测/预示",
+      "direction": "assoc",
+      "inverse": "",
+      "definition": "主体是预测变量，客体是被预测的结果。",
+      "evidence_policy": "预测不等于因果，confidence 基准不高于 0.6。",
+      "patterns": [
+        {"re": "(预测|预示)", "conf": 0.6},
+        {"re": "\\bpredict(s|ed|ing|ive|or)?\\b", "conf": 0.6}
+      ]
+    },
+    {
+      "key": "shows",
+      "zh": "表明/显示/说明/发现/指出",
+      "direction": "report",
+      "inverse": "",
+      "definition": "主体（研究、结果、作者）陈述客体这一结论。",
+      "evidence_policy": "转述前缀单独记 attribution；证据片段仍须含陈述动词。",
+      "patterns": [
+        {"re": "(表明|显示|说明|发现|指出|认为)", "conf": 0.6},
+        {"re": "\\b(show|indicat|suggest|demonstrat|reveal)(s|es|ed|ing)?\\b", "conf": 0.6},
+        {"re": "\\bfinds?\\b|\\bfound\\b", "conf": 0.6}
+      ]
+    },
+    {
+      "key": "supports",
+      "zh": "支持/支撑/佐证",
+      "direction": "report",
+      "inverse": "",
+      "definition": "主体（证据、研究）支撑客体（结论或区分）。",
+      "evidence_policy": "支撑关系不等于证明；confidence 基准确认后写入 confidence_basis。",
+      "patterns": [
+        {"re": "(支持|支撑|佐证)", "conf": 0.6},
+        {"re": "\\bsupports?\\b|\\bsupported\\b|\\bsupporting\\b", "conf": 0.6}
+      ]
+    },
+    {
+      "key": "compares",
+      "zh": "组间比较（显著更高/更低）",
+      "direction": "compare",
+      "inverse": "",
+      "definition": "两个组在某个指标上的比较，方向由形容词 higher/lower 决定。",
+      "evidence_policy": "片段须含比较词与两组线索；缺一组判 evidence_insufficient。",
+      "patterns": [
+        {"re": "\\b(exhibit|display|show)(s|ed|ing)?\\s+(significantly\\s+)?(higher|lower|greater|smaller)\\b", "conf": 0.7},
+        {"re": "\\b(is|are|was|were)\\s+(significantly\\s+)?(higher|lower|larger|smaller)\\b", "conf": 0.7}
+      ]
+    },
+    {
+      "key": "has_property",
+      "zh": "存在/具有/属于/构成",
+      "direction": "property",
+      "inverse": "",
+      "definition": "主体具有客体这一属性或成分。",
+      "evidence_policy": "属性型断言最容易被写宽，超过长度阈值一律标 wide。",
+      "patterns": [
+        {"re": "(存在|具有|属于|构成)", "conf": 0.5}
+      ]
+    }
+  ],
+  "negation_zh": ["并未", "未能", "未曾", "不曾", "不再", "没有", "未", "无显著", "无"],
+  "negation_en": ["did not", "does not", "was not", "were not", "not ", "never", "failed to", "no significant", "cannot", "without"],
+  "negation_exclude": ["not only", "not appear", "not necessarily"],
+  "sign_negative": ["负相关", "负向", "negatively correlated", "negative correlation", "inversely"],
+  "sign_positive": ["正相关", "正向", "positively correlated", "positive correlation"],
+  "clause_boundary_zh": "[；;]|，(?=并且|同时|而|此外|另|且|也)|,(?=并且|同时|而|此外)",
+  "clause_boundary_en": "\\s[;]\\s|,\\s+(?:and|but|whereas|while|however)\\s+",
+  "figure_ref": "图\\s*\\d|表\\s*\\d|Figure\\s*\\d|Table\\s*\\d|Fig\\.?\\s*\\d|Eq\\.?\\s*\\(?\\d|公式\\s*\\d",
+  "pronoun_subject_zh": "^\\s*(该|此|这|其|它|上述|前述|上述结果|该结果|这种方法)",
+  "pronoun_subject_en": "^\\s*(it|this|these|those|they|such|the former|the latter|that)\\b"
+}

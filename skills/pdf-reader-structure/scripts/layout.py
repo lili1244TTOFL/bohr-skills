@@ -10,6 +10,11 @@
 所以另从 `page_chunks`（visitor_text 的 tm[4]/tm[5]）按段文本做最长匹配，
 匹配成功的块给测量框，匹配不上的块保留推算框并置 `bbox_est=True`。
 
+公式在字符块层面重建：公式体与右对齐编号之间有大间距，行内又带小字号上下标，
+按空格切段会把它拆成 "E = m c" / "2" / "+ k T" / "(2)" 四块，编号还会被并到
+错误的前一块上。这里先找"公式体 + 右对齐编号"的视觉行，再用字符块的
+字号与基线还原上下标，输出 `original`（逐字原样）与 `inline`（带 ^{} _{} 标记）。
+
 表格单元格的段先按 cell_texts 剔除，再聚栏 —— 否则单元格起始列会被当成
 第三、第四栏，把正文顺序拆散。
 
@@ -21,6 +26,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 SPLIT = re.compile(r"[ \t]{5,}")
 CAPTION = re.compile(r"^\s*(图|表|Figure|Fig\.?|Table)\s*[0-9A-Z]")
@@ -29,6 +35,7 @@ CAPTION_SENT = re.compile(r"^\s*(图|表|Figure|Fig\.?|Table)\s+[0-9IVXivx]+[.:]
 REF_ITEM = re.compile(r"^\s*\[\d+\]\s+\S")
 NUM_HEAD = re.compile(r"^\s*(\d+(?:\.\d+)*)[\s.、]\s*(\S.*)$")
 FORMULA_NO = re.compile(r"[（(]\s*(\d+[a-z]?)\s*[）)]\s*$")
+FORMULA_NO_CHUNK = re.compile(r"^[（(]\s*(\d{1,2}[a-z]?)\s*[）)]$")
 PAGE_NO = re.compile(r"^\s*[-–—]\s*\d{1,4}\s*[-–—]\s*$")
 ALL_CAPS = re.compile(r"^[A-Z][A-Z0-9 \-:,]{4,}$")
 HEAD_WORDS = re.compile(r"(?i)^(abstract|introduction|background|related work|methods?|"
@@ -36,10 +43,17 @@ HEAD_WORDS = re.compile(r"(?i)^(abstract|introduction|background|related work|me
                         r"references|acknowledge?ments?|appendix|摘要|引言|前言|方法|结果|"
                         r"讨论|结论|参考文献|致谢|附录)\b")
 CJK = re.compile(r"[\u4e00-\u9fff]")
+TERMINAL = (".", "。", "；", ";", ",", "，", "、")
+SYM_SPACE = re.compile(r"[^\x00-\x7f\s]")
 
 
 def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", s or "").strip()
+
+
+def _sq(s: str) -> str:
+    """去空白后的形式：段被空格切碎后，仍能和公式原文对上。"""
+    return re.sub(r"\s+", "", s or "")
 
 
 def _w(s: str, size: float) -> float:
@@ -118,36 +132,42 @@ def order_rows(rows: list[list[dict]], buckets: list[int], tol: int = 8) -> list
     return out
 
 
-def classify(text: str, body_len: float, size: float | None = None,
-             body_size: float | None = None) -> str:
+def classify2(text: str, body_len: float, size: float | None = None,
+              body_size: float | None = None) -> tuple[str, str]:
+    """返回 (角色, 依据)。依据是稳定的判据名，写进每个块的 why 字段，供复核。"""
     t = text.strip()
     if FORMULA_NO.search(t):
-        return "formula"
+        return "formula", "formula:tail_no"
     if PAGE_NO.match(t):
-        return "page_number"
+        return "page_number", "page_number:dash_no"
     if CAPTION.match(t) and not CAPTION_SENT.match(t) and len(t) <= 160:
         if not t.endswith(("。",)) and (not t.endswith(".") or ":" in t):
-            return "caption"
+            return "caption", "caption:fig_table_head"
     if REF_ITEM.match(t):
-        return "reference"
+        return "reference", "reference:bracket_no"
     # 编号标题先于参考文献：真实期刊写 "1. Introduction"，不能被 "\d+\." 抢走
     if len(t) <= 90:
         m = NUM_HEAD.match(t)
         if m:
             rest = m.group(2)
-            if (HEAD_WORDS.match(rest) or (len(t) <= 60 and not t.endswith((".", "。", "；", ";")))):
-                return "heading"
+            if (HEAD_WORDS.match(rest) or (len(t) <= 60 and not t.endswith(TERMINAL))):
+                return "heading", "heading:num_head"
         if ALL_CAPS.match(t):
-            return "heading"
-        if len(t) <= 60 and HEAD_WORDS.match(t) and not t.endswith(("。", ".", ";", "；")):
-            return "heading"
+            return "heading", "heading:caps"
+        if len(t) <= 60 and HEAD_WORDS.match(t) and not t.endswith(TERMINAL):
+            return "heading", "heading:wordlist"
     # 字号门槛：标题比正文大 1.5 倍记为 title，大 1.15 倍记为 heading
     if size and body_size:
         if size >= body_size * 1.5 and len(t) <= 200 and not t.endswith(("。", ".")):
-            return "title"
+            return "title", "title:size_ge_1.5"
         if size >= body_size * 1.15 and len(t) <= 120 and not t.endswith(("。", ".")):
-            return "heading"
-    return "body"
+            return "heading", "heading:size_ge_1.15"
+    return "body", "body:default"
+
+
+def classify(text: str, body_len: float, size: float | None = None,
+             body_size: float | None = None) -> str:
+    return classify2(text, body_len, size, body_size)[0]
 
 
 def heading_level(text: str) -> int:
@@ -199,6 +219,149 @@ def _locate(t: str, groups: list[dict]) -> tuple[list[float] | None, float | Non
     return None, None
 
 
+def sym_inventory(text: str) -> list[dict]:
+    """非 ASCII 字符清单：字符、码位、Unicode 名、出现次数。用来证明符号没失真。"""
+    cnt: dict[str, int] = {}
+    for ch in text or "":
+        if ord(ch) < 128 or ch.isspace():
+            continue
+        cnt[ch] = cnt.get(ch, 0) + 1
+    out = []
+    for ch, n in cnt.items():
+        try:
+            name = unicodedata.name(ch)
+        except ValueError:
+            name = ""
+        out.append({"char": ch, "cp": "U+%04X" % ord(ch), "name": name, "count": n})
+    out.sort(key=lambda d: d["cp"])
+    return out
+
+
+def _runs(chunks: list[dict], main: float, main_y: float) -> list[dict]:
+    """按字号与基线把字符块分成 正文 / 上标 / 下标 三类连续段。"""
+    kind = []
+    for c in chunks:
+        if not c["text"].strip():
+            continue
+        if c["size"] <= main * 0.88 and c["y"] - main_y >= 0.18 * main:
+            k = "sup"
+        elif c["size"] <= main * 0.88 and c["y"] - main_y <= -0.10 * main:
+            k = "sub"
+        else:
+            k = "main"
+        kind.append((k, c))
+    runs: list[dict] = []
+    for k, c in kind:
+        if runs and runs[-1]["kind"] == k:
+            prev = runs[-1]["chunks"][-1]
+            gap = c["x"] - prev["x"] - _w(prev["text"], prev["size"])
+            space = k == "main" and (c.get("space_before") or gap > 0.3 * c["size"])
+            runs[-1]["text"] += (" " if space else "") + c["text"]
+            runs[-1]["chunks"].append(c)
+            runs[-1]["x1"] = c["x"] + _w(c["text"], c["size"])
+        else:
+            runs.append({"kind": k, "text": c["text"], "chunks": [c],
+                         "x0": c["x"], "x1": c["x"] + _w(c["text"], c["size"])})
+    return runs
+
+
+def _absorb(g: dict, groups: list[dict], num: dict, main: float) -> list[dict]:
+    """把公式行上下的上下标字符块收进来。
+
+    上下标的基线比公式体高/低几个点，按基线聚行时会被分到别的行；这里以公式
+    体基线为中心开窗口取字符块：字号小于公式体 90% 的（候选上下标）允许偏
+    0.85×字号，正常字号的只允许偏 0.35×字号（那就是同一视觉行，不是邻行）。
+    """
+    body = [c for c in g["chunks"] if c is not num]
+    if not body:
+        return [num]
+    lo = min(c["x"] for c in body) - 2
+    hi = num["x"] - 1
+
+    def in_window(c: dict) -> bool:
+        dy = abs(c["y"] - g["y"])
+        if c["size"] <= main * 0.9:
+            return dy <= 0.85 * main
+        return dy <= 0.35 * main
+
+    pool = [c for gg in groups for c in gg["chunks"]
+            if lo <= c["x"] <= hi and in_window(c)]
+    pool.sort(key=lambda c: (c["x"], -c["y"]))
+    seen: set[tuple] = set()
+    out = []
+    for c in pool:
+        key = (round(c["x"], 1), round(c["y"], 1), c["text"])
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({**c, "text": c["text"].strip(),
+                    "space_before": bool((c["text"] or "")[:1].isspace())})
+    out.append({**num, "text": num["text"].strip(), "formula_no_chunk": True})
+    return out
+
+
+def formula_runs(chunks: list[dict], bsize: float) -> list[dict]:
+    """在字符块层面找"公式体 + 右对齐编号"的视觉行，并重建上下标。
+
+    判据（三条同时成立才算公式行，避免把正文里顺带出现的 "(2)" 当公式）：
+      1. 该视觉行最后一个字符块形如 `(1)` / `（2a）`；
+      2. 编号块与公式体末端的水平间距 ≥ 3×正文字号（公式编号右对齐）；
+      3. 公式体长度 ≤ 140 字符，且不以句末标点结尾。
+    """
+    groups = _groups(chunks or [])
+    out = []
+    for g in groups:
+        chs = [c for c in g["chunks"] if c["text"].strip()]
+        if len(chs) < 2:
+            continue
+        num = chs[-1]
+        m = FORMULA_NO_CHUNK.match(_norm(num["text"]))
+        if not m:
+            continue
+        body = chs[:-1]
+        gap = num["x"] - max(c["x"] + _w(c["text"], c["size"]) for c in body)
+        if gap < 3 * max(bsize, 1.0):
+            continue
+        main = max(c["size"] for c in body)
+        main_y = max((c["y"] for c in body if c["size"] >= main * 0.99), default=body[0]["y"])
+        line = _absorb(g, groups, num, main)
+        body = [c for c in line if not c.get("formula_no_chunk")]
+        body_text = "".join(c["text"] for c in body).strip()
+        if not body_text or len(body_text) > 140 or body_text.endswith(TERMINAL):
+            continue
+        runs = _runs(body, main, main_y)
+        plain, inline = "", ""
+        for r in runs:
+            if r["kind"] == "main":
+                plain += (" " if plain and not plain.endswith((" ", "-")) else "") + r["text"]
+                inline += (" " if inline and not inline.endswith((" ", "^{", "_{")) else "") + r["text"]
+            elif r["kind"] == "sup":
+                plain += r["text"]
+                inline += "^{" + r["text"] + "}"
+            else:
+                plain += r["text"]
+                inline += "_{" + r["text"] + "}"
+        plain = (plain + " " + _norm(num["text"])).strip()
+        inline = (inline + " " + _norm(num["text"])).strip()
+        x0 = min(c["x"] for c in line)
+        x1 = max(c["x"] + _w(c["text"], c["size"]) for c in line)
+        out.append({"y": g["y"], "x0": round(x0, 1), "x1": round(x1, 1),
+                    "main_size": main, "no": m.group(1), "original": plain,
+                    "inline": inline, "text": _norm(g["text"]),
+                    "scripts": [{"text": r["text"], "kind": r["kind"],
+                                 "bbox": [round(r["x0"], 1), round(r["chunks"][0]["y"], 1),
+                                          round(r["x1"], 1),
+                                          round(r["chunks"][0]["y"] + main, 1)],
+                                 "size": round(r["chunks"][0]["size"], 1),
+                                 "size_ratio": round(r["chunks"][0]["size"] / main, 2)}
+                                for r in runs if r["kind"] != "main"],
+                    "symbols": sym_inventory(plain),
+                    "chunks": [{"text": c["text"].strip(), "size": round(c["size"], 1),
+                                "x": round(c["x"], 1), "y": round(c["y"], 1)}
+                               for c in line]})
+    return out
+
+
 def _body_size(chunks: list[dict]) -> float:
     from collections import Counter
     cnt = Counter(round(c["size"], 1) for c in (chunks or []) if c.get("size"))
@@ -208,6 +371,16 @@ def _body_size(chunks: list[dict]) -> float:
 def _in_cells(t: str, cells: list[str]) -> bool:
     nt = _norm(t)
     return bool(nt) and any(nt == c or nt in c for c in cells)
+
+
+def _formula_block(fr: dict, pno: int) -> dict:
+    return {"page": pno, "role": "formula", "text": fr["original"],
+            "line": -1, "col": 0,
+            "bbox": [fr["x0"], round(fr["y"], 1), fr["x1"], round(fr["y"] + fr["main_size"], 1)],
+            "size": round(fr["main_size"], 1), "formula_no": fr["no"],
+            "original": fr["original"], "inline": fr["inline"],
+            "scripts": fr["scripts"], "symbols": fr["symbols"],
+            "chunks": fr["chunks"], "why": "formula:no_and_gap"}
 
 
 def parse_page_layout(page, pno: int, chunks: list[dict] | None = None,
@@ -228,18 +401,68 @@ def parse_page_layout(page, pno: int, chunks: list[dict] | None = None,
         pw = float(page.mediabox.width)
     except Exception:
         ph, pw = 842.0, 595.0
+    fruns = formula_runs(chunks or [], bsize)
+    # 段的实测框只算一次；同一段在"公式行定位"和"常规出块"两处都要用
+    loc = [_locate(x["text"], groups) for x in ordered]
+    # 先把每个公式行落到它出现在阅读顺序里的那个行号：上下标可能被 layout 分成
+    # 上一行（抬高的上标）或下一行（压低的下载），要靠这个行号窗口把它们吃掉。
+    for fr in fruns:
+        for i, x in enumerate(ordered):
+            bb = loc[i][0]
+            near = (bb is not None
+                    and abs(bb[1] - fr["y"]) <= max(2.0, 0.45 * fr["main_size"])
+                    and bb[0] >= fr["x0"] - 3 and bb[2] <= fr["x1"] + 3)
+            if near or (bb is None and _sq(_norm(x["text"])) in _sq(fr["original"])):
+                fr["line"] = x["line"]
+                break
+    taken_runs: set[int] = set()
     blocks = []
-    for x in ordered:
-        bbox, size = _locate(x["text"], groups)
+    for i, x in enumerate(ordered):
+        bbox, size = loc[i]
+        nx = _norm(x["text"])
+        consumed = False
+        for k, fr in enumerate(fruns):
+            if k not in taken_runs:
+                continue
+            # 公式行重建时已吃掉这一段：编号段 / 公式体段都不能再当正文或再并一次
+            if bbox is not None and abs(bbox[1] - fr["y"]) <= max(2.0, 0.45 * fr["main_size"]) \
+                    and bbox[0] >= fr["x0"] - 3 and bbox[2] <= fr["x1"] + 3:
+                consumed = True
+                break
+            if (nx and fr.get("line") is not None and abs(x["line"] - fr["line"]) <= 1
+                    and _sq(nx) in _sq(fr["original"])):
+                consumed = True
+                break
+        if consumed:
+            continue
+        hit = None
+        for k, fr in enumerate(fruns):
+            if k in taken_runs:
+                continue
+            near = (bbox is not None
+                    and abs(bbox[1] - fr["y"]) <= max(2.0, 0.45 * fr["main_size"])
+                    and bbox[0] >= fr["x0"] - 3 and bbox[2] <= fr["x1"] + 3)
+            sub = (bbox is None and nx and nx in fr["text"])
+            if near or sub:
+                hit = k
+                break
+        if hit is not None:
+            taken_runs.add(hit)
+            fruns[hit]["line"] = x["line"]
+            fb = _formula_block(fruns[hit], pno)
+            fb["col"] = x["col"]
+            fb["line"] = x["line"]
+            blocks.append(fb)
+            continue
         est = bbox is None
         if est:
             y = round(ph - 12 * x["line"], 1)
             bbox = [round(pw * x["col"] / 100, 1), y,
                     round(pw * (x["col"] + len(x["text"])) / 100, 1), round(y + 10, 1)]
-        role = classify(x["text"], body_len, size, bsize)
+        role, why = classify2(x["text"], body_len, size, bsize)
         b = {"page": pno, "role": role, "text": x["text"],
              "line": x["line"], "col": x["col"], "bbox": bbox,
-             "size": round(size, 1) if size else None}
+             "size": round(size, 1) if size else None, "why": why}
         if est:
             b["bbox_est"] = True
         if role == "heading":
@@ -248,6 +471,15 @@ def parse_page_layout(page, pno: int, chunks: list[dict] | None = None,
         if m:
             b["formula_no"] = m.group(1)
         blocks.append(b)
+    # 兜底：未被公式行重建吃掉的公式块（例如编号与公式体之间间距太小）
+    for b in blocks:
+        if b["role"] != "formula":
+            continue
+        b.setdefault("original", b["text"])
+        b.setdefault("inline", b["text"])
+        b.setdefault("scripts", [])
+        b.setdefault("symbols", sym_inventory(b["text"]))
+        b.setdefault("why", "formula:tail_no")
     # 合并：独立成段的公式编号并入同行的公式；跨行的大标题并成一块
     merged: list[dict] = []
     for b in blocks:
@@ -259,6 +491,10 @@ def parse_page_layout(page, pno: int, chunks: list[dict] | None = None,
             prev["formula_no"] = b["text"].strip("（）() ")
             prev["role"] = "formula"
             prev["text"] = (prev["text"] + " " + b["text"]).strip()
+            prev["original"] = prev["text"]
+            prev["inline"] = prev["text"]
+            prev["why"] = "formula:merged_no"
+            prev["symbols"] = sym_inventory(prev["text"])
             prev["bbox"][2] = max(prev["bbox"][2], b["bbox"][2])
             continue
         if (b["role"] == "title" and prev is not None and prev["role"] == "title"

@@ -1,14 +1,15 @@
-# Resource entry point: environment/resources.yaml
+﻿# Resource entry point: environment/resources.yaml
 # Bundled files are relative to this directory.
 skill: ../SKILL.md
-version: "1.0.0"
-install: 无需安装；依赖 Python 3.9+ 标准库与 python-docx
+version: "2.0.0"
+install: 无需安装；只用 Python 3.9+ 标准库（不依赖第三方包，不下载任何文件）
 source: 随 Skill 附带，无外部下载
-conditions: 需可写工作目录；输入为 .docx 稿件、原文献表与 .bib 文献库；运行时不联网
+conditions: 需可写工作目录；输入为 .tex 工程（可含 .bib）；编译验证需本机有 TeX 发行版，没有时按 no_tex_distribution 降级并如实记录
 resources:
+  - ../run.py
+  - ../autofix.py
+  - ../scripts/texcheck.py
+  - ../SKILL.md
   - ../examples/call.md
   - ../examples/paper.tex
   - ../examples/refs.bib
-  - ../run.py
-  - ../scripts/texcheck.py
-  - ../SKILL.md

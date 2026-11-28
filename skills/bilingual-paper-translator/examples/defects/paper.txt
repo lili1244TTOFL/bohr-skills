@@ -1,0 +1,9 @@
+Working memory load was increased in three steps in 24 participants [1].
+
+Reaction time rose by 122 ms after 5 mg of caffeine (Fig. 2).
+
+Reaction time rose by 122 ms after 5 mg of caffeine (Fig. 2).
+
+RT = a + b × load   (1)
+
+Accuracy appeared stable, but the authors did not report variance.

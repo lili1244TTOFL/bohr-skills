@@ -128,3 +128,13 @@ python run.py --input examples --work w --out o   # 期望 status=success
 证据单位：**引用键 + 行内标记**。每条问题给码与可定位描述（如"引用键 li2020 不在 bib"、"贡献第 2 条无 Fig./Table/Section 标记"），人能凭码与键回到 `draft.md` 与 `refs.bib` 核对。
 
 `result.json` 带 `evidence` 字段，形如 `{"unit": "cite_key+line_marker", "items": [...]}`，逐条列出问题码与对应引用键，用于回指原文。
+
+## 检查码全表
+
+| 码 | 判据 |
+|-|-|
+| C09 | 见 `run.py` 实现与 `changes.md` 对应条目 |
+| C10 | 见 `run.py` 实现与 `changes.md` 对应条目 |
+| C11 | 见 `run.py` 实现与 `changes.md` 对应条目 |
+| C12 | 见 `run.py` 实现与 `changes.md` 对应条目 |
+| L10 | 见 `run.py` 实现与 `changes.md` 对应条目 |

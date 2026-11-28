@@ -1,0 +1,11 @@
+{
+  "case_id": "example-full",
+  "note": "示例输入，非组织方固定案例；用来说明接口与完整流程",
+  "output_contract": {
+    "translation": "逐段双语对照与译文",
+    "segments": "段号与字符区间",
+    "evidence": "证据与来源定位",
+    "status": "运行状态",
+    "uncertainty": "不确定项"
+  }
+}

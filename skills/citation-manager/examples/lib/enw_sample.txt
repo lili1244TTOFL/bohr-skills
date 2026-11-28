@@ -1,0 +1,21 @@
+%0 Journal Article
+%A Wang, Y.
+%A Chen, H.
+%T Pupil diameter as an objective marker of vigilance under sleep restriction
+%J Journal of Sleep Research
+%D 2021
+%V 30
+%N 4
+%P e13210
+%R 10.1111/jsr.13210
+
+%0 Journal Article
+%A 李, 明
+%A 周, 婷
+%T 睡眠限制对执行功能的影响：基于眼动指标的研究
+%J 心理学报
+%D 2022
+%V 54
+%N 6
+%P 631-644
+%R 10.3724/SP.J.1041.2022.00631

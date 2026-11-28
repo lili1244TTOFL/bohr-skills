@@ -49,6 +49,53 @@ def _tables_mod():
     return mod
 
 
+def _figures_mod():
+    here = Path(__file__).resolve().parent
+    spec = importlib.util.spec_from_file_location("figures", here / "figures.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def table_insert_index(blocks: list[dict], tb: dict) -> int:
+    """表格插进阅读顺序的位置：优先紧跟其上方最近的那条表题，否则按 y 落位。"""
+    best = None
+    for i, b in enumerate(blocks):
+        if b.get("role") != "caption":
+            continue
+        if not re.match(r"^\s*(表|Table)\s*[0-9]", b.get("text") or ""):
+            continue
+        if b["bbox"][1] >= tb["bbox"][3] - 1:
+            d = b["bbox"][1] - tb["bbox"][3]
+            if best is None or d < best[0]:
+                best = (d, i + 1)
+    if best is not None:
+        return best[1]
+    for i, b in enumerate(blocks):
+        if b["bbox"][1] < tb["bbox"][3] - 1:
+            return i
+    return len(blocks)
+
+
+def table_block(g: dict, pno: int, unassigned: list[dict]) -> dict:
+    """表格块：网格 + 未归属文字（不硬塞，留给 gaps 与 result.json 如实列出）。"""
+    return {"page": pno,
+            "bbox": [round(g["x0"], 1), round(g["y0"], 1),
+                     round(g["x1"], 1), round(g["y1"], 1)],
+            "role": "table",
+            "text": "[table %dx%d]" % (g["n_rows"], g["n_cols"]),
+            "n_rows": g["n_rows"], "n_cols": g["n_cols"],
+            "rows": [[c["text"] for c in row] for row in g["rows"]],
+            "markdown": _tables_mod().to_markdown(g),
+            "cells_total": g.get("cells_total", g["n_rows"] * g["n_cols"]),
+            "cells_filled": g.get("cells_filled", 0),
+            "n_assigned": g.get("n_assigned", 0),
+            "lines": {"h": g.get("h", 0), "v": g.get("v", 0)},
+            "unassigned": [{"text": c["text"].strip(), "x": round(c["x"], 1),
+                            "y": round(c["y"], 1)} for c in unassigned],
+            "why": "table:line_grid"}
+
+
 def page_chunks(page) -> tuple[list[dict], float, float]:
     w = float(page.mediabox.width)
     h = float(page.mediabox.height)
@@ -203,15 +250,8 @@ def parse_page(page, pno: int) -> dict:
         in_chunks = [c for c in chunks if tb.inside(g, c["x"], c["y"])]
         for c in in_chunks:
             taken.add(id(c))
-        tb.assign(g, in_chunks)
-        table_blocks.append({"page": pno,
-                             "bbox": [round(g["x0"], 1), round(g["y0"], 1),
-                                      round(g["x1"], 1), round(g["y1"], 1)],
-                             "role": "table",
-                             "text": "[table %dx%d]" % (g["n_rows"], g["n_cols"]),
-                             "n_rows": g["n_rows"], "n_cols": g["n_cols"],
-                             "rows": [[c["text"] for c in row] for row in g["rows"]],
-                             "markdown": tb.to_markdown(g)})
+        unassigned = tb.assign(g, in_chunks)
+        table_blocks.append(table_block(g, pno, unassigned))
     body_chunks = [c for c in chunks if id(c) not in taken]
     lines = to_lines(body_chunks)
     body = body_size(lines)
@@ -223,7 +263,8 @@ def parse_page(page, pno: int) -> dict:
         block = {"page": pno,
                  "bbox": [round(ln["x0"], 1), round(ln["y"], 1),
                           round(ln["x1"], 1), round(ln["y"] + ln["size"], 1)],
-                 "text": ln["text"], "role": role, "size": ln["size"], "font": ln["font"]}
+                 "text": ln["text"], "role": role, "size": ln["size"],
+                 "font": ln["font"], "why": "coords:" + role}
         if role == "heading":
             block["level"] = heading_level(ln, body)
         m = FORMULA_NO.search(ln["text"])
@@ -246,13 +287,14 @@ def parse_page(page, pno: int) -> dict:
                 prev["bbox"][2] = max(prev["bbox"][2], b["bbox"][2])
                 continue
         merged.append(b)
-    for tb in table_blocks:
-        idx = len(merged)
-        for i, b in enumerate(merged):
-            if b["bbox"][1] < tb["bbox"][3]:
-                idx = i
-                break
-        merged.insert(idx, tb)
+    for b in merged:
+        if b["role"] == "formula":
+            b.setdefault("original", b["text"])
+            b.setdefault("inline", b["text"])
+            b.setdefault("scripts", [])
+            b.setdefault("symbols", _layout_mod().sym_inventory(b["text"]))
+    for tb_ in table_blocks:
+        merged.insert(table_insert_index(merged, tb_), tb_)
     return {"page": pno, "width": w, "height": h, "n_lines": len(lines),
             "columns": len(cols), "body_size": body, "blocks": merged,
             "n_tables": len(table_blocks), "empty": not chunks and not table_blocks}
@@ -279,28 +321,16 @@ def parse_layout_page(page, pno: int) -> dict:
     tables_out, cell_texts = [], []
     for g in tb.grids(page):
         in_chunks = [c for c in chunks if tb.inside(g, c["x"], c["y"])]
-        tb.assign(g, in_chunks)
+        unassigned = tb.assign(g, in_chunks)
         for row in g["rows"]:
             for cell in row:
                 if cell["text"].strip():
                     cell_texts.append(cell["text"].strip())
-        tables_out.append({"page": pno,
-                           "bbox": [round(g["x0"], 1), round(g["y0"], 1),
-                                    round(g["x1"], 1), round(g["y1"], 1)],
-                           "role": "table",
-                           "text": "[table %dx%d]" % (g["n_rows"], g["n_cols"]),
-                           "n_rows": g["n_rows"], "n_cols": g["n_cols"],
-                           "rows": [[c["text"] for c in row] for row in g["rows"]],
-                           "markdown": tb.to_markdown(g)})
+        tables_out.append(table_block(g, pno, unassigned))
     res = lay.parse_page_layout(page, pno, chunks, cell_texts)
     blocks = res["blocks"]
     for t in tables_out:
-        idx = len(blocks)
-        for i, b in enumerate(blocks):
-            if b["role"] == "caption" and b["text"].startswith(("表", "Table")):
-                idx = i + 1
-                break
-        blocks.insert(idx, t)
+        blocks.insert(table_insert_index(blocks, t), t)
     res["blocks"] = blocks
     res["n_tables"] = len(tables_out)
     return res
@@ -336,6 +366,7 @@ def mark_running_heads(pages: list[dict]) -> dict:
                 else:
                     top = b["bbox"][1] > p["height"] * 0.92
                 b["role"] = "header" if top else "footer"
+                b["why"] = "header:repeat_top" if top else "footer:repeat_bottom"
                 marked["header" if top else "footer"].append(b["text"])
     return marked
 
@@ -352,17 +383,24 @@ def parse(path: str | Path, pages: list[int] | None = None,
             encrypted = False
         except Exception:
             pass
+    fmod = _figures_mod()
     out_pages = []
     for i, page in enumerate(r.pages, 1):
         if pages and i not in pages:
             continue
-        out_pages.append(parse_layout_page(page, i) if engine == "layout"
-                         else parse_page(page, i))
+        rec = parse_layout_page(page, i) if engine == "layout" else parse_page(page, i)
+        try:
+            rec["figures"] = fmod.regions(page, i)
+        except Exception:
+            rec["figures"] = []
+        out_pages.append(rec)
     heads = mark_running_heads(out_pages)
     empty = [p["page"] for p in out_pages if p["empty"]]
+    figs = [f for p in out_pages for f in p.get("figures") or []]
     return {"ok": True, "source": str(path), "n_pages": total,
             "pages_parsed": len(out_pages), "encrypted": encrypted,
-            "no_text_pages": empty, "running": heads, "pages": out_pages}
+            "no_text_pages": empty, "running": heads, "figures": figs,
+            "pages": out_pages}
 
 
 def main(argv: list[str] | None = None) -> int:

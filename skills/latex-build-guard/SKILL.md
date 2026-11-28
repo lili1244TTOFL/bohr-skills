@@ -216,3 +216,20 @@ python run.py --input examples --out output --work work
 | F06 | 首个分节是 `\subsection` 且此前无 `\section`，提升为 `\section`（只改层级，不改标题文字） |
 
 实测：`examples/paper.tex` 原 10 行 270 B，跑完得 `fixed.tex` 15 行 351 B，五处改动（F01 重复 label 改名、F02 补 `label{fig:missing}`、F03 补 caption、F05 缺图换占位框、F06 subsection→section）；修复稿复检只剩 T03/T05 两条 info。
+
+## 检查码全表与脚本
+
+| 码 | 判据 |
+|-|-|
+| F07 | 见代码实现 |
+| F08 | 见代码实现 |
+| T12 | 见代码实现 |
+| T13 | 见代码实现 |
+| T14 | 见代码实现 |
+| T15 | 见代码实现 |
+| T16 | 见代码实现 |
+| T17 | 见代码实现 |
+| T18 | 见代码实现 |
+
+脚本：`scripts/build.py`（编译，失败时收集全部错误）、`scripts/project.py`（工程扫描）、`rules/templates.json`（模板必填项）。
+模板必填项与编译证据落到 `report.md` 与 `result.json`。

@@ -1,14 +1,31 @@
 {
   "source_id": "secondary",
   "doi": "10.1000/example.secondary",
+  "note": "示例材料：非真实论文，仅用于演示接口与流程，不冒充正式案例结果。",
   "paragraphs": [
     {
       "paragraph_id": "JATS-P-0012",
-      "text": "We evaluate BERT on SST-2 as well, and compare F1 scores across datasets."
+      "text": "We evaluate BERT on SST-2 as well, and report F1 scores across datasets."
     },
     {
       "paragraph_id": "JATS-P-0013",
       "text": "A graph neural network baseline is used for the retrieval task on MS MARCO."
+    },
+    {
+      "paragraph_id": "JATS-P-0014",
+      "text": "However, the graph neural network does not improve F1 on MS MARCO in our replication."
+    },
+    {
+      "paragraph_id": "JATS-P-0015",
+      "text": "We compare BERT with the graph neural network baseline under the same tokenizer."
+    },
+    {
+      "paragraph_id": "JATS-P-0016",
+      "text": "Our ablation confirms that BERT benefits from contrastive learning on SST-2."
+    },
+    {
+      "paragraph_id": "JATS-P-0017",
+      "text": "The annotated corpus is released with sentence-level classification labels."
     }
   ]
 }

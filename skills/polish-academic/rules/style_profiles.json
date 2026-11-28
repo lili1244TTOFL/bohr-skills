@@ -1,0 +1,51 @@
+{
+  "version": "1.0.0",
+  "source": "自制；判据来自题面「学术语气与语域」一节：期刊论文、学位论文、基金申请书、审稿回复、英文摘要的语气要求不同",
+  "usage": "run.py 读 profiles[<style>].avoid 逐条匹配改后稿；命中即报 S01，并把命中原因写进 changes.md 的核验结论",
+  "note": "avoid 只放「该文体明确不宜出现」的表达；缺一条不会崩，需要扩展学科写法时在这里加行，改 run.py 不用动",
+  "profiles": {
+    "journal": {
+      "label": "期刊论文",
+      "avoid": [
+        {"pattern": "\\b(don't|doesn't|isn't|aren't|can't|won't|it's|we're)\\b", "why": "期刊正文不用缩略形式"},
+        {"pattern": "\\bwe believe\\b|\\bin our opinion\\b", "why": "用证据不用主观断言"},
+        {"pattern": "\\b(groundbreaking|cutting-edge|revolutionary|remarkable|novel)\\b", "why": "宣传化表述，改为具体贡献"},
+        {"pattern": "\\b(a lot of|huge|big)\\b", "why": "口语词，改书面词"},
+        {"pattern": "!", "why": "学术正文不用感叹号"}
+      ]
+    },
+    "abstract": {
+      "label": "英文摘要",
+      "avoid": [
+        {"pattern": "\\b(don't|doesn't|isn't|aren't|can't|won't)\\b", "why": "摘要不用缩略形式"},
+        {"pattern": "\\b(groundbreaking|cutting-edge|revolutionary|remarkable|novel)\\b", "why": "摘要不写宣传词"},
+        {"pattern": "\\b(a lot of|huge|big|stuff)\\b", "why": "摘要用书面词"},
+        {"pattern": "!", "why": "摘要不用感叹号"}
+      ]
+    },
+    "dissertation": {
+      "label": "学位论文",
+      "avoid": [
+        {"pattern": "\\bobviously\\b|\\bof course\\b", "why": "论证不宜预设读者已认同"},
+        {"pattern": "\\b(a lot of|huge|big|stuff)\\b", "why": "学位论文用书面词"},
+        {"pattern": "\\bwe believe\\b|\\bin our opinion\\b", "why": "避免主观断言"}
+      ]
+    },
+    "grant": {
+      "label": "基金申请书",
+      "avoid": [
+        {"pattern": "\\b(groundbreaking|cutting-edge|revolutionary|world-leading|first ever)\\b", "why": "申请书忌无据的夸张评价"},
+        {"pattern": "\\b(obviously|clearly)\\b", "why": "评审不接受未经论证的加强词"},
+        {"pattern": "\\bwill definitely\\b|\\b必然\\b", "why": "结果不可绝对承诺"}
+      ]
+    },
+    "review-response": {
+      "label": "审稿回复",
+      "avoid": [
+        {"pattern": "\\b(clearly wrong|obviously incorrect|the reviewer misunderstood)\\b", "why": "回复信不对审稿人做对抗性评价"},
+        {"pattern": "\\b(don't|doesn't|isn't|can't)\\b", "why": "回复信用完整形式"},
+        {"pattern": "\\b(we feel|we think)\\b", "why": "改为说明证据与改动位置"}
+      ]
+    }
+  }
+}

@@ -22,15 +22,8 @@ import statistics
 import sys
 from pathlib import Path
 
-HEAD_WORDS = re.compile(r"(?i)^(abstract|introduction|background|related work|methods?|"
-                        r"materials and methods|results?|discussion|conclusions?|"
-                        r"references|acknowledge?ments?|appendix|摘要|引言|前言|方法|"
-                        r"结果|讨论|结论|参考文献|致谢|附录)\b")
-CAPTION = re.compile(r"^\s*(图|表|Figure|Fig\.?|Table)\s*[0-9A-Z]")
-REF_ITEM = re.compile(r"^\s*(\[\d+\]|\d+\.)\s+\S")
-FORMULA_NO = re.compile(r"[（(]\s*(\d+[a-z]?)\s*[）)]\s*$")
-PAGE_NO = re.compile(r"^\s*[-–—]\s*\d{1,4}\s*[-–—]\s*$")
-HEAD_NUM = re.compile(r"^\s*\d+(\.\d+)*[\s.、]\s*\S")
+ALPHA = re.compile(r"[A-Za-z\u4e00-\u9fff]")
+NUM_DOM = re.compile(r"^[\s\d.,%±×^()+\-/–—:]*$")
 CJK = re.compile(r"[\u4e00-\u9fff]")
 
 
@@ -167,23 +160,17 @@ def order_lines(lines: list[dict], cols: list[tuple[float, float]]) -> list[dict
     return out
 
 
+def _textclass_mod():
+    here = Path(__file__).resolve().parent
+    spec = importlib.util.spec_from_file_location("textclass", here / "textclass.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def classify(line: dict, body: float) -> str:
-    t = line["text"]
-    if FORMULA_NO.search(t):
-        return "formula"
-    if PAGE_NO.match(t):
-        return "page_number"
-    if CAPTION.match(t):
-        return "caption"
-    if REF_ITEM.match(t):
-        return "reference"
-    big = line["size"] >= body * 1.15
-    bold = "bold" in line["font"].lower()
-    if (big or bold) and len(t) <= 90 and not t.endswith(("。", ".", ";", "；")):
-        return "heading"
-    if HEAD_NUM.match(t) and len(t) <= 60 and HEAD_WORDS.match(t.split(None, 1)[-1] if " " in t else t):
-        return "heading"
-    return "body"
+    """行角色：与 layout 路径共用 textclass 口径（编号章节不再被判成参考文献）。"""
+    return _textclass_mod().classify_role(line["text"])
 
 
 def heading_level(line: dict, body: float) -> int:
@@ -339,6 +326,98 @@ def mark_running_heads(pages: list[dict]) -> dict:
     return marked
 
 
+ALPHA = re.compile(r"[A-Za-z\u4e00-\u9fff]")
+NUM_DOM = re.compile(r"^[\s\d.,%±×^()+\-/–—:]*$")
+
+
+def prune_headings(pages: list[dict]) -> dict:
+    """把假标题降级为 body：切节只用真标题，避免表格首列把章节骨架打碎。
+
+    判定用 textclass.heading_reject，与 layout 路径同一口径。
+    """
+    tc = _textclass_mod()
+    audit = {"n_before": 0, "n_after": 0, "demoted": [], "by_reason": {}}
+    for p in pages:
+        for b in p["blocks"]:
+            if b["role"] != "heading":
+                continue
+            audit["n_before"] += 1
+            why = tc.heading_reject(b.get("text") or "")
+            if why:
+                b["role"] = "body"
+                b.pop("level", None)
+                audit["by_reason"][why] = audit["by_reason"].get(why, 0) + 1
+                if len(audit["demoted"]) < 60:
+                    audit["demoted"].append({"page": p["page"],
+                                             "text": (b.get("text") or "")[:70],
+                                             "why": why})
+            else:
+                audit["n_after"] += 1
+    # 第二遍：同名标题重复出现（跨页表头/栏头/表名）降级为 body
+    from collections import Counter
+    cnt: Counter = Counter()
+    for p in pages:
+        for b in p["blocks"]:
+            if b["role"] == "heading":
+                cnt[(b.get("text") or "").strip().lower()] += 1
+    for p in pages:
+        for b in p["blocks"]:
+            if b["role"] != "heading":
+                continue
+            key = (b.get("text") or "").strip().lower()
+            if cnt[key] >= 2 and not tc.HEAD_WORDS.match(tc.strip_markers(b.get("text") or "")):
+                b["role"] = "body"
+                b.pop("level", None)
+                audit["n_after"] -= 1
+                why = "同名标题重复出现（疑跨页表头/栏头）"
+                audit["by_reason"][why] = audit["by_reason"].get(why, 0) + 1
+                if len(audit["demoted"]) < 60:
+                    audit["demoted"].append({"page": p["page"],
+                                             "text": (b.get("text") or "")[:70],
+                                             "why": why})
+    # 第三遍：参考文献节之后不再起新节（参考文献条目常以「编号 + 点」开头）
+    in_refs = False
+    for p in pages:
+        for b in p["blocks"]:
+            if b["role"] != "heading":
+                continue
+            core = tc.strip_markers(b.get("text") or "")
+            if re.match(r"(?i)^(references?|bibliography|参考文献)\b", core):
+                in_refs = True
+                continue
+            if in_refs and not re.match(r"(?i)^(appendix|附录|acknowledge?ments?|致谢|supplementary)\b",
+                                        core):
+                b["role"] = "body"
+                b.pop("level", None)
+                audit["n_after"] -= 1
+                why = "参考文献节内的编号条目"
+                audit["by_reason"][why] = audit["by_reason"].get(why, 0) + 1
+                if len(audit["demoted"]) < 60:
+                    audit["demoted"].append({"page": p["page"],
+                                             "text": (b.get("text") or "")[:70],
+                                             "why": why})
+    # 第四遍：结构判据——标题后 3 个块内必须有一条正文长行，否则是表格首列/碎行
+    flat = [b for p in pages for b in p["blocks"]]
+    for i, b in enumerate(flat):
+        if b["role"] != "heading":
+            continue
+        look = flat[i + 1:i + 4]
+        if any(x["role"] in ("body", "table") and len((x.get("text") or "")) >= 40
+               for x in look):
+            continue
+        if any(x["role"] == "heading" for x in look):
+            continue  # 父标题紧跟子标题，正文在子标题之后
+        b["role"] = "body"
+        b.pop("level", None)
+        audit["n_after"] -= 1
+        why = "其后无正文长行（疑表格首列/栏头）"
+        audit["by_reason"][why] = audit["by_reason"].get(why, 0) + 1
+        if len(audit["demoted"]) < 60:
+            audit["demoted"].append({"page": b["page"], "text": (b.get("text") or "")[:70],
+                                     "why": why})
+    return audit
+
+
 def parse(path: str | Path, pages: list[int] | None = None,
           engine: str = "layout") -> dict:
     from pypdf import PdfReader
@@ -358,10 +437,12 @@ def parse(path: str | Path, pages: list[int] | None = None,
         out_pages.append(parse_layout_page(page, i) if engine == "layout"
                          else parse_page(page, i))
     heads = mark_running_heads(out_pages)
+    h_audit = prune_headings(out_pages)
     empty = [p["page"] for p in out_pages if p["empty"]]
     return {"ok": True, "source": str(path), "n_pages": total,
             "pages_parsed": len(out_pages), "encrypted": encrypted,
-            "no_text_pages": empty, "running": heads, "pages": out_pages}
+            "no_text_pages": empty, "running": heads, "heading_audit": h_audit,
+            "pages": out_pages}
 
 
 def main(argv: list[str] | None = None) -> int:

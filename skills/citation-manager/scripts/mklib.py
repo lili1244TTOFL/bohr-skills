@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""mklib.py — BibTeX / RIS 导出 → library.json（统一字段，保留原文）。
+"""mklib.py — BibTeX / RIS / EndNote(.enw) / CNKI·RefWorks/NoteExpress 题录 → library.json。
 
 字段：id type authors title container year volume issue pages doi publisher place url keywords raw
+字段映射表见 rules/format_map.md；解析不了的条目不会被静默吞掉，按文件在 stdout 的
+`unparsed` 里报出来（run.py 会写进 material_gaps）。
 
 用法：
   python mklib.py lib.bib --out work/lib/library.json
-  python mklib.py lib.ris lib.bib --out work/lib/library.json --tsv work/lib/library.tsv
+  python mklib.py lib.ris cnki.txt lib.enw --out work/lib/library.json --tsv work/lib/library.tsv
 """
 
 from __future__ import annotations
@@ -29,6 +31,40 @@ RIS_TYPE = {
     "BOOK": "M", "CHAP": "A", "THES": "D", "RPRT": "R", "STAND": "S",
     "PAT": "P", "ELEC": "EB/OL", "WEB": "EB/OL", "GEN": "Z", "UNPB": "Z",
 }
+# EndNote %0 与 CNKI/RefWorks/NoteExpress 的类型名 → 国标标识
+TYPE_NAME = {
+    "journal article": "J", "journal": "J", "article": "J", "magazine article": "J",
+    "book": "M", "book section": "A", "edited book": "M", "conference paper": "C",
+    "conference proceedings": "C", "thesis": "D", "dissertation": "D",
+    "report": "R", "standard": "S", "patent": "P", "web page": "EB/OL",
+    "electronic article": "EB/OL", "generic": "Z", "other": "Z",
+    "期刊": "J", "期刊文章": "J", "图书": "M", "专著": "M", "会议论文": "C",
+    "学位论文": "D", "博士论文": "D", "硕士论文": "D", "报告": "R", "标准": "S",
+    "专利": "P", "电子资源": "EB/OL", "报纸": "N",
+}
+# 标签 → 统一字段（EndNote 用 %X；RefWorks 用 XX  ；NoteExpress/CNKI 用 {Tag}: 或 中文标签:）
+ENW_TAG = {
+    "0": "type_name", "A": "authors", "T": "title", "J": "container", "B": "container",
+    "D": "year", "V": "volume", "N": "issue", "P": "pages", "R": "doi",
+    "I": "publisher", "C": "place", "U": "url", "K": "keywords_raw",
+}
+REFWORKS_TAG = {
+    "RT": "type_name", "A1": "authors", "AU": "authors", "T1": "title", "TI": "title",
+    "JF": "container", "JO": "container", "T2": "container", "PY": "year", "Y1": "year",
+    "VL": "volume", "IS": "issue", "SP": "pages_start", "EP": "pages_end",
+    "DO": "doi", "PB": "publisher", "CY": "place", "UR": "url", "KW": "keywords_raw",
+}
+CN_TAG = {
+    "题名": "title", "标题": "title", "作者": "authors", "刊名": "container",
+    "期刊": "container", "来源": "container", "年": "year", "年份": "year",
+    "卷": "volume", "期": "issue", "页码": "pages", "页": "pages",
+    "DOI": "doi", "doi": "doi", "出版者": "publisher", "出版社": "publisher",
+    "出版地": "place", "类型": "type_name", "文献类型": "type_name",
+    "关键词": "keywords_raw", "URL": "url", "链接": "url",
+}
+ENW_LINE = re.compile(r"^%([0-9A-Za-z])\s*(.*)$")
+TAG_LINE = re.compile(r"^\{?([^:{}]{1,14})\}?\s*[:：]\s*(.*)$")
+
 
 
 def _utf8() -> None:
@@ -168,6 +204,122 @@ def _ris_norm(c: dict) -> dict:
     }
 
 
+# ------------------------------------------------------------- EndNote (.enw)
+def parse_enw(text: str) -> list[dict]:
+    """EndNote 导出：一条 = 一段 `%X 值` 行，空行分隔。"""
+    entries, cur, raw = [], {}, []
+    for line in text.replace("\r\n", "\n").split("\n"):
+        m = ENW_LINE.match(line.strip())
+        if not m:
+            if not line.strip() and cur:
+                entries.append(_tagged_norm(cur, raw, "endnote"))
+                cur, raw = {}, []
+            continue
+        tag, val = m.group(1), m.group(2).strip()
+        raw.append(line.strip())
+        if tag in ("0", "TY"):
+            if cur:
+                entries.append(_tagged_norm(cur, raw[:-1], "endnote"))
+                cur, raw = {}, [line.strip()]
+        key = ENW_TAG.get(tag)
+        if not key:
+            continue
+        if key == "authors":
+            cur.setdefault("authors", []).append(val)
+        else:
+            cur.setdefault(key, val)
+    if cur:
+        entries.append(_tagged_norm(cur, raw, "endnote"))
+    return entries
+
+
+# ------------------------------------------- CNKI / RefWorks / NoteExpress 标签式
+def parse_tagged(text: str) -> list[dict]:
+    """`{Tag}: 值` 或 `Tag: 值`（含中文标签）的题录；用空行或新的类型行断条。"""
+    entries, cur, raw = [], {}, []
+    for line in text.replace("\r\n", "\n").split("\n"):
+        s = line.strip()
+        m = TAG_LINE.match(s)
+        if not m:
+            if not s and cur:
+                entries.append(_tagged_norm(cur, raw, "cnki"))
+                cur, raw = {}, []
+            continue
+        tag, val = m.group(1).strip(), m.group(2).strip()
+        key = (CN_TAG.get(tag) or REFWORKS_TAG.get(tag.upper())
+               or REFWORKS_TAG.get(tag) or CN_TAG.get(tag.strip()))
+        if not key:
+            raw.append(s)
+            continue
+        if key == "type_name" and cur:
+            entries.append(_tagged_norm(cur, raw, "cnki"))
+            cur, raw = {}, [s]
+        else:
+            raw.append(s)
+        if key == "authors":
+            parts = [x for x in re.split(r"[;；,，]\s*|\s+and\s+", val) if x.strip()]
+            cur.setdefault("authors", []).extend(parts)
+        else:
+            cur.setdefault(key, val)
+    if cur:
+        entries.append(_tagged_norm(cur, raw, "cnki"))
+    return entries
+
+
+def _tagged_norm(c: dict, raw: list[str], source: str) -> dict:
+    sp, ep = c.get("pages_start"), c.get("pages_end")
+    pages = c.get("pages") or (f"{sp}-{ep}" if sp and ep else (sp or ""))
+    tname = (c.get("type_name") or "").strip()
+    typ = TYPE_NAME.get(tname.lower()) or TYPE_NAME.get(tname) or "Z"
+    return {
+        "id": c.get("id", ""), "type": typ,
+        "authors": [a.strip() for a in c.get("authors", []) if a.strip()],
+        "title": c.get("title", ""), "container": c.get("container", ""),
+        "year": c.get("year", ""), "volume": c.get("volume", ""),
+        "issue": c.get("issue", ""), "pages": pages,
+        "doi": re.sub(r"(?i)^(https?://(dx\.)?doi\.org/|doi:\s*)", "",
+                      (c.get("doi") or "").strip()).rstrip("."),
+        "publisher": c.get("publisher", ""), "place": c.get("place", ""),
+        "url": c.get("url", ""), "keywords_raw": c.get("keywords_raw", ""),
+        "raw": " ".join(raw), "source": source,
+    }
+
+
+def sniff_format(text: str) -> str:
+    if re.search(r"^TY  - ", text, re.M):
+        return "ris"
+    if re.search(r"^%0\s", text, re.M):
+        return "endnote"
+    if re.search(r"^@\s*\w+\s*\{", text, re.M):
+        return "bibtex"
+    if re.search(r"^\{?Reference Type\}?\s*[:：]", text, re.M):
+        return "cnki"
+    if re.search(r"^\s*(题名|作者|刊名|文献类型)\s*[:：]", text, re.M):
+        return "cnki"
+    if re.search(r"^(RT|T1|A1)\s*-\s", text, re.M):
+        return "refworks"
+    return ""
+
+
+def parse_any(path: str, text: str) -> tuple[list[dict], str]:
+    """先按扩展名，再按内容嗅探；都不认返回空列表（由调用方报 unparsed）。"""
+    ext = Path(path).suffix.lower()
+    order = {".ris": "ris", ".enw": "endnote", ".bib": "bibtex",
+             ".nbib": "endnote", ".nw": "cnki", ".refworks": "refworks"}
+    fmt = order.get(ext) or sniff_format(text)
+    if fmt == "ris":
+        return parse_ris(text), "ris"
+    if fmt == "endnote":
+        return parse_enw(text), "endnote"
+    if fmt == "cnki":
+        return parse_tagged(text), "cnki"
+    if fmt == "refworks":
+        return parse_tagged(text), "refworks"
+    if fmt == "bibtex":
+        return parse_bib(text), "bibtex"
+    return [], ""
+
+
 # ------------------------------------------------------------------ 主流程
 TSV_COLS = ["id", "type", "authors", "title", "container", "year",
             "volume", "issue", "pages", "doi", "publisher", "raw"]
@@ -183,11 +335,18 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     entries: list[dict] = []
+    parsed_files, unparsed = [], []
     for p in args.inputs:
         text = Path(p).read_text(encoding="utf-8-sig", errors="replace")
-        got = parse_ris(text) if p.lower().endswith(".ris") else parse_bib(text)
+        got, fmt = parse_any(p, text)
+        if not got:
+            unparsed.append({"path": str(p), "bytes": len(text),
+                             "why": "内容不像 bib/ris/EndNote/CNKI 题录，未解析出条目"})
+            continue
         for e in got:
             e["source_file"] = str(p)
+            e["source_format"] = fmt
+        parsed_files.append({"path": str(p), "format": fmt, "n": len(got)})
         entries.extend(got)
 
     for n, e in enumerate(entries, 1):
@@ -198,7 +357,8 @@ def main(argv: list[str] | None = None) -> int:
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     payload = {"generated_by": "mklib.py", "n": len(entries),
-               "fields": TSV_COLS, "entries": entries}
+               "fields": TSV_COLS, "files": parsed_files,
+               "unparsed": unparsed, "entries": entries}
     out.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
 
     if args.tsv:
@@ -230,11 +390,9 @@ def main(argv: list[str] | None = None) -> int:
     for e in entries:
         by_type[e["type"]] = by_type.get(e["type"], 0) + 1
     print(json.dumps({"ok": True, "n": len(entries), "by_type": by_type,
+                      "files": parsed_files, "unparsed": unparsed,
                       "out": str(out), "tsv": args.tsv, "min_tsv": args.min_tsv},
                      ensure_ascii=False))
-    return 0
-    print(json.dumps({"ok": True, "n": len(entries), "by_type": by_type,
-                      "out": str(out), "tsv": args.tsv}, ensure_ascii=False))
     return 0
 
 

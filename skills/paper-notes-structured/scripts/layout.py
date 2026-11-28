@@ -16,29 +16,37 @@
 
 from __future__ import annotations
 
+import importlib.util
 import re
+from pathlib import Path
 
 SPLIT = re.compile(r"[ \t]{5,}")
 CAPTION = re.compile(r"^\s*(图|表|Figure|Fig\.?|Table)\s*[0-9A-Z]")
-REF_ITEM = re.compile(r"^\s*(\[\d+\]|\d+\.)\s+\S")
 FORMULA_NO = re.compile(r"[（(]\s*(\d+[a-z]?)\s*[）)]\s*$")
 PAGE_NO = re.compile(r"^\s*[-–—]\s*\d{1,4}\s*[-–—]\s*$")
 HEAD_NUM = re.compile(r"^\s*\d+(\.\d+)*[\s.、]\s*\S")
 ALL_CAPS = re.compile(r"^[A-Z][A-Z0-9 \-:,]{4,}$")
-HEAD_WORDS = re.compile(r"(?i)^(abstract|introduction|background|related work|methods?|"
-                        r"materials and methods|experiments?|results?|discussion|conclusions?|"
-                        r"references|acknowledge?ments?|appendix|摘要|引言|前言|方法|结果|"
-                        r"讨论|结论|参考文献|致谢|附录)\b")
+
+
+def _textclass():
+    """行级角色判定与 pdfparse 共用一份口径（scripts/textclass.py）。"""
+    here = Path(__file__).resolve().parent
+    spec = importlib.util.spec_from_file_location("textclass", here / "textclass.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def page_text(page) -> str:
+    """取版面文本；NBSP（中文排版常用）先折成空格，否则中文行会被切成碎段。"""
     try:
-        return page.extract_text(extraction_mode="layout", layout_mode_space_vertically=False) or ""
+        raw = page.extract_text(extraction_mode="layout", layout_mode_space_vertically=False) or ""
     except Exception:
         try:
-            return page.extract_text() or ""
+            raw = page.extract_text() or ""
         except Exception:
-            return ""
+            raw = ""
+    return raw.replace("\u00a0", " ").replace("\u3000", "  ")
 
 
 def segments(text: str) -> list[list[dict]]:
@@ -93,23 +101,9 @@ def order_rows(rows: list[list[dict]], buckets: list[int], tol: int = 8) -> list
     return out
 
 
-def classify(text: str, body_len: float) -> str:
-    t = text.strip()
-    if FORMULA_NO.search(t):
-        return "formula"
-    if PAGE_NO.match(t):
-        return "page_number"
-    if CAPTION.match(t):
-        return "caption"
-    if REF_ITEM.match(t):
-        return "reference"
-    if len(t) <= 80 and HEAD_NUM.match(t):
-        return "heading"
-    if len(t) <= 80 and ALL_CAPS.match(t):
-        return "heading"
-    if len(t) <= 60 and HEAD_WORDS.match(t) and not t.endswith(("。", ".", ";", "；")):
-        return "heading"
-    return "body"
+def classify(text: str, body_len: float = 0.0) -> str:
+    """行角色统一走 textclass：编号章节不再被当成参考文献条目。"""
+    return _textclass().classify_role(text)
 
 
 def heading_level(text: str) -> int:

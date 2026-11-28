@@ -1,0 +1,1809 @@
+{
+ "_note": "示例参考图谱：由包内 examples/ 的两篇示例材料（DOI 10.1000/example.*，非真实论文）实跑生成，用来说明产物形状。不是组织方测试案例的结果，也不冒充正式答案。",
+ "_generated_by": "python run.py --input examples --work <w> --out <o>",
+ "_how_to_use": "先看 nodes/edges 的证据字段，再看 merges 里每条 decision 与 conflict，最后看 measurements 为什么按篇分列。",
+ "case_id": "graph-demo",
+ "skill": "graph-jats",
+ "skill_version": "2.0.0",
+ "sources": [
+  "primary",
+  "secondary"
+ ],
+ "paragraphs_per_source": {
+  "primary": 5,
+  "secondary": 6
+ },
+ "papers": [
+  {
+   "source_id": "primary",
+   "doi": "10.1000/example.primary",
+   "title": "Fine-tuning BERT for text classification (example material)",
+   "authors": "Example A, Example B",
+   "license": "example-only；示例材料，非真实论文，不代表可再分发许可",
+   "sha256": "0e75e325a1dad698"
+  },
+  {
+   "source_id": "secondary",
+   "doi": "10.1000/example.secondary",
+   "title": "Comparing BERT and GNN baselines (example material)",
+   "authors": "Example C, Example D",
+   "license": "example-only；示例材料，非真实论文，不代表可再分发许可",
+   "sha256": "d72e8d6d03e26fd3"
+  }
+ ],
+ "nodes": [
+  {
+   "id": "dataset:ms-marco@secondary",
+   "type": "dataset",
+   "label": "ms marco",
+   "canonical": "ms marco",
+   "surface_forms": [
+    "MS MARCO"
+   ],
+   "norm_rule": "小写+连字符/下划线/空格归一+末尾复数归一",
+   "confidence": "high",
+   "evidence": [
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0013",
+     "quote": "A graph neural network baseline is used for the retrieval task on MS MARCO.",
+     "stance": "unspecified"
+    },
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0014",
+     "quote": "However, the graph neural network does not improve F1 on MS MARCO in our replication.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "id": "dataset:sst-2@primary",
+   "type": "dataset",
+   "label": "sst-2",
+   "canonical": "sst 2",
+   "surface_forms": [
+    "SST-2"
+   ],
+   "norm_rule": "小写+连字符/下划线/空格归一+末尾复数归一",
+   "confidence": "high",
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0007",
+     "quote": "We fine-tune BERT on SST-2 and report accuracy of 0.91 in our classification experiments.",
+     "stance": "self"
+    },
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0009",
+     "quote": "Devlin et al. reported that BERT outperforms the CNN baseline on SST-2 by 2.1 accuracy points.",
+     "stance": "reported"
+    },
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0011",
+     "quote": "We find that attention accounts for most of the gain on SST-2 classification.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "id": "dataset:sst-2@secondary",
+   "type": "dataset",
+   "label": "sst-2",
+   "canonical": "sst 2",
+   "surface_forms": [
+    "SST-2"
+   ],
+   "norm_rule": "小写+连字符/下划线/空格归一+末尾复数归一",
+   "confidence": "high",
+   "evidence": [
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0012",
+     "quote": "We evaluate BERT on SST-2 as well, and report F1 scores across datasets.",
+     "stance": "self"
+    },
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0016",
+     "quote": "Our ablation confirms that BERT benefits from contrastive learning on SST-2.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "id": "dataset:wikitext@primary",
+   "type": "dataset",
+   "label": "wikitext",
+   "canonical": "wikitext",
+   "surface_forms": [
+    "Wikitext"
+   ],
+   "norm_rule": "小写+连字符/下划线/空格归一+末尾复数归一",
+   "confidence": "high",
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0008",
+     "quote": "The transformer encoder is trained with a contrastive learning objective on Wikitext.",
+     "stance": "unspecified"
+    }
+   ]
+  },
+  {
+   "id": "finding:we-find-that-attention-accou",
+   "type": "finding",
+   "label": "We find that attention accounts for most of the gain on SST-2 classification.",
+   "canonical": "we find that attention accounts for most of the gain on sst 2 classification",
+   "surface_forms": [
+    "We find that attention accounts for most of the gain on SST-2 classification."
+   ],
+   "norm_rule": "小写+连字符/下划线/空格归一+末尾复数归一",
+   "confidence": "high",
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0011",
+     "quote": "We find that attention accounts for most of the gain on SST-2 classification.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "id": "material:annotated-corpus@primary",
+   "type": "material",
+   "label": "annotated corpus",
+   "canonical": "annotated corpu",
+   "surface_forms": [
+    "annotated corpus"
+   ],
+   "norm_rule": "小写+连字符/下划线/空格归一+末尾复数归一",
+   "confidence": "high",
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0010",
+     "quote": "Our annotated corpus contains 12 000 abstracts from computational linguistics.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "id": "material:annotated-corpus@secondary",
+   "type": "material",
+   "label": "annotated corpus",
+   "canonical": "annotated corpu",
+   "surface_forms": [
+    "annotated corpus"
+   ],
+   "norm_rule": "小写+连字符/下划线/空格归一+末尾复数归一",
+   "confidence": "high",
+   "evidence": [
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0017",
+     "quote": "The annotated corpus is released with sentence-level classification labels.",
+     "stance": "unspecified"
+    }
+   ]
+  },
+  {
+   "id": "method:attention@primary",
+   "type": "method",
+   "label": "attention",
+   "canonical": "attention",
+   "surface_forms": [
+    "attention"
+   ],
+   "norm_rule": "小写+连字符/下划线/空格归一+末尾复数归一",
+   "confidence": "high",
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0011",
+     "quote": "We find that attention accounts for most of the gain on SST-2 classification.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "id": "method:bert",
+   "type": "method",
+   "label": "bert",
+   "canonical": "bert",
+   "surface_forms": [
+    "BERT"
+   ],
+   "norm_rule": "小写+连字符/下划线/空格归一+末尾复数归一",
+   "confidence": "high",
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0007",
+     "quote": "We fine-tune BERT on SST-2 and report accuracy of 0.91 in our classification experiments.",
+     "stance": "self"
+    },
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0009",
+     "quote": "Devlin et al. reported that BERT outperforms the CNN baseline on SST-2 by 2.1 accuracy points.",
+     "stance": "reported"
+    },
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0012",
+     "quote": "We evaluate BERT on SST-2 as well, and report F1 scores across datasets.",
+     "stance": "self"
+    },
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0015",
+     "quote": "We compare BERT with the graph neural network baseline under the same tokenizer.",
+     "stance": "self"
+    },
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0016",
+     "quote": "Our ablation confirms that BERT benefits from contrastive learning on SST-2.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "id": "method:cnn@primary",
+   "type": "method",
+   "label": "cnn",
+   "canonical": "cnn",
+   "surface_forms": [
+    "CNN"
+   ],
+   "norm_rule": "小写+连字符/下划线/空格归一+末尾复数归一",
+   "confidence": "medium",
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0009",
+     "quote": "Devlin et al. reported that BERT outperforms the CNN baseline on SST-2 by 2.1 accuracy points.",
+     "stance": "reported"
+    }
+   ]
+  },
+  {
+   "id": "method:contrastive-learning",
+   "type": "method",
+   "label": "contrastive learning",
+   "canonical": "contrastive learning",
+   "surface_forms": [
+    "contrastive learning"
+   ],
+   "norm_rule": "小写+连字符/下划线/空格归一+末尾复数归一",
+   "confidence": "high",
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0008",
+     "quote": "The transformer encoder is trained with a contrastive learning objective on Wikitext.",
+     "stance": "unspecified"
+    },
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0016",
+     "quote": "Our ablation confirms that BERT benefits from contrastive learning on SST-2.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "id": "method:graph-neural-network@secondary",
+   "type": "method",
+   "label": "graph neural network",
+   "canonical": "graph neural network",
+   "surface_forms": [
+    "graph neural network"
+   ],
+   "norm_rule": "小写+连字符/下划线/空格归一+末尾复数归一",
+   "confidence": "high",
+   "evidence": [
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0013",
+     "quote": "A graph neural network baseline is used for the retrieval task on MS MARCO.",
+     "stance": "unspecified"
+    },
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0014",
+     "quote": "However, the graph neural network does not improve F1 on MS MARCO in our replication.",
+     "stance": "self"
+    },
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0015",
+     "quote": "We compare BERT with the graph neural network baseline under the same tokenizer.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "id": "method:transformer@primary",
+   "type": "method",
+   "label": "transformer",
+   "canonical": "transformer",
+   "surface_forms": [
+    "transformer"
+   ],
+   "norm_rule": "小写+连字符/下划线/空格归一+末尾复数归一",
+   "confidence": "high",
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0008",
+     "quote": "The transformer encoder is trained with a contrastive learning objective on Wikitext.",
+     "stance": "unspecified"
+    }
+   ]
+  },
+  {
+   "id": "metric:accuracy@primary",
+   "type": "metric",
+   "label": "accuracy",
+   "canonical": "accuracy",
+   "surface_forms": [
+    "accuracy"
+   ],
+   "norm_rule": "小写+连字符/下划线/空格归一+末尾复数归一",
+   "confidence": "medium",
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0007",
+     "quote": "We fine-tune BERT on SST-2 and report accuracy of 0.91 in our classification experiments.",
+     "stance": "self"
+    },
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0009",
+     "quote": "Devlin et al. reported that BERT outperforms the CNN baseline on SST-2 by 2.1 accuracy points.",
+     "stance": "reported"
+    }
+   ]
+  },
+  {
+   "id": "metric:f1@secondary",
+   "type": "metric",
+   "label": "f1",
+   "canonical": "f1",
+   "surface_forms": [
+    "F1"
+   ],
+   "norm_rule": "小写+连字符/下划线/空格归一+末尾复数归一",
+   "confidence": "high",
+   "evidence": [
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0012",
+     "quote": "We evaluate BERT on SST-2 as well, and report F1 scores across datasets.",
+     "stance": "self"
+    },
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0014",
+     "quote": "However, the graph neural network does not improve F1 on MS MARCO in our replication.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "id": "paper:primary",
+   "type": "paper",
+   "label": "论文 primary",
+   "canonical": "primary",
+   "surface_forms": [
+    "primary"
+   ],
+   "norm_rule": "小写+连字符/下划线/空格归一+末尾复数归一",
+   "confidence": "high",
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0007",
+     "quote": "We fine-tune BERT on SST-2 and report accuracy of 0.91 in our classification experiments.",
+     "stance": "self"
+    }
+   ],
+   "meta": {
+    "doi": "10.1000/example.primary",
+    "title": "Fine-tuning BERT for text classification (example material)",
+    "authors": "Example A, Example B",
+    "license": "example-only；示例材料，非真实论文，不代表可再分发许可",
+    "sha256": "0e75e325a1dad698"
+   }
+  },
+  {
+   "id": "paper:secondary",
+   "type": "paper",
+   "label": "论文 secondary",
+   "canonical": "secondary",
+   "surface_forms": [
+    "secondary"
+   ],
+   "norm_rule": "小写+连字符/下划线/空格归一+末尾复数归一",
+   "confidence": "high",
+   "evidence": [
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0012",
+     "quote": "We evaluate BERT on SST-2 as well, and report F1 scores across datasets.",
+     "stance": "self"
+    }
+   ],
+   "meta": {
+    "doi": "10.1000/example.secondary",
+    "title": "Comparing BERT and GNN baselines (example material)",
+    "authors": "Example C, Example D",
+    "license": "example-only；示例材料，非真实论文，不代表可再分发许可",
+    "sha256": "d72e8d6d03e26fd3"
+   }
+  },
+  {
+   "id": "researcher:devlin@primary",
+   "type": "researcher",
+   "label": "devlin",
+   "canonical": "devlin",
+   "surface_forms": [
+    "Devlin"
+   ],
+   "norm_rule": "小写+连字符/下划线/空格归一+末尾复数归一",
+   "confidence": "medium",
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0009",
+     "quote": "Devlin et al. reported that BERT outperforms the CNN baseline on SST-2 by 2.1 accuracy points.",
+     "stance": "reported"
+    }
+   ]
+  },
+  {
+   "id": "task:classification",
+   "type": "task",
+   "label": "classification",
+   "canonical": "classification",
+   "surface_forms": [
+    "classification"
+   ],
+   "norm_rule": "小写+连字符/下划线/空格归一+末尾复数归一",
+   "confidence": "high",
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0007",
+     "quote": "We fine-tune BERT on SST-2 and report accuracy of 0.91 in our classification experiments.",
+     "stance": "self"
+    },
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0011",
+     "quote": "We find that attention accounts for most of the gain on SST-2 classification.",
+     "stance": "self"
+    },
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0017",
+     "quote": "The annotated corpus is released with sentence-level classification labels.",
+     "stance": "unspecified"
+    }
+   ]
+  },
+  {
+   "id": "task:retrieval@secondary",
+   "type": "task",
+   "label": "retrieval",
+   "canonical": "retrieval",
+   "surface_forms": [
+    "retrieval"
+   ],
+   "norm_rule": "小写+连字符/下划线/空格归一+末尾复数归一",
+   "confidence": "high",
+   "evidence": [
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0013",
+     "quote": "A graph neural network baseline is used for the retrieval task on MS MARCO.",
+     "stance": "unspecified"
+    }
+   ]
+  }
+ ],
+ "edges": [
+  {
+   "source": "method:bert",
+   "target": "method:cnn@primary",
+   "type": "outperforms",
+   "confidence": "medium",
+   "attribution": "reported_elsewhere",
+   "basis": "cue:outperform",
+   "direction_basis": "比较词前实体 → 比较词后实体（有方向）",
+   "applicability": {
+    "datasets": [
+     "sst-2"
+    ],
+    "tasks": [],
+    "metrics": [
+     "accuracy"
+    ],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0009",
+     "quote": "Devlin et al. reported that BERT outperforms the CNN baseline on SST-2 by 2.1 accuracy points.",
+     "stance": "reported"
+    }
+   ]
+  },
+  {
+   "source": "method:bert",
+   "target": "method:contrastive-learning",
+   "type": "supports",
+   "confidence": "high",
+   "attribution": "self",
+   "basis": "cue:confirm",
+   "direction_basis": "原文语序：先出现的实体 → 后出现的实体",
+   "applicability": {
+    "datasets": [
+     "sst-2"
+    ],
+    "tasks": [],
+    "metrics": [],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0016",
+     "quote": "Our ablation confirms that BERT benefits from contrastive learning on SST-2.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "source": "method:bert",
+   "target": "method:graph-neural-network@secondary",
+   "type": "compared_with",
+   "confidence": "high",
+   "attribution": "self",
+   "basis": "cue:compare",
+   "direction_basis": "原文语序：先出现的实体 → 后出现的实体（比较本身无方向）",
+   "applicability": {
+    "datasets": [],
+    "tasks": [],
+    "metrics": [],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0015",
+     "quote": "We compare BERT with the graph neural network baseline under the same tokenizer.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "source": "method:bert",
+   "target": "metric:accuracy@primary",
+   "type": "reports_metric",
+   "confidence": "low",
+   "attribution": "reported_elsewhere",
+   "basis": "cooccurrence",
+   "direction_basis": "同句共现，无方向语义",
+   "applicability": {
+    "datasets": [
+     "sst-2"
+    ],
+    "tasks": [],
+    "metrics": [
+     "accuracy"
+    ],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0009",
+     "quote": "Devlin et al. reported that BERT outperforms the CNN baseline on SST-2 by 2.1 accuracy points.",
+     "stance": "reported"
+    }
+   ]
+  },
+  {
+   "source": "method:bert",
+   "target": "metric:accuracy@primary",
+   "type": "reports_metric",
+   "confidence": "low",
+   "attribution": "self",
+   "basis": "cooccurrence",
+   "direction_basis": "同句共现，无方向语义",
+   "applicability": {
+    "datasets": [
+     "sst-2"
+    ],
+    "tasks": [
+     "classification"
+    ],
+    "metrics": [
+     "accuracy"
+    ],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0007",
+     "quote": "We fine-tune BERT on SST-2 and report accuracy of 0.91 in our classification experiments.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "source": "method:bert",
+   "target": "metric:f1@secondary",
+   "type": "reports_metric",
+   "confidence": "low",
+   "attribution": "self",
+   "basis": "cooccurrence",
+   "direction_basis": "同句共现，无方向语义",
+   "applicability": {
+    "datasets": [
+     "sst-2"
+    ],
+    "tasks": [],
+    "metrics": [
+     "f1"
+    ],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0012",
+     "quote": "We evaluate BERT on SST-2 as well, and report F1 scores across datasets.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "source": "method:cnn@primary",
+   "target": "metric:accuracy@primary",
+   "type": "reports_metric",
+   "confidence": "low",
+   "attribution": "reported_elsewhere",
+   "basis": "cooccurrence",
+   "direction_basis": "同句共现，无方向语义",
+   "applicability": {
+    "datasets": [
+     "sst-2"
+    ],
+    "tasks": [],
+    "metrics": [
+     "accuracy"
+    ],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0009",
+     "quote": "Devlin et al. reported that BERT outperforms the CNN baseline on SST-2 by 2.1 accuracy points.",
+     "stance": "reported"
+    }
+   ]
+  },
+  {
+   "source": "method:graph-neural-network@secondary",
+   "target": "metric:f1@secondary",
+   "type": "contradicts",
+   "confidence": "high",
+   "attribution": "self",
+   "basis": "cue:however",
+   "direction_basis": "原文语序：先出现的实体 → 后出现的实体",
+   "applicability": {
+    "datasets": [
+     "ms marco"
+    ],
+    "tasks": [],
+    "metrics": [
+     "f1"
+    ],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0014",
+     "quote": "However, the graph neural network does not improve F1 on MS MARCO in our replication.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "source": "method:graph-neural-network@secondary",
+   "target": "metric:f1@secondary",
+   "type": "reports_metric",
+   "confidence": "low",
+   "attribution": "self",
+   "basis": "cooccurrence",
+   "direction_basis": "同句共现，无方向语义",
+   "applicability": {
+    "datasets": [
+     "ms marco"
+    ],
+    "tasks": [],
+    "metrics": [
+     "f1"
+    ],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0014",
+     "quote": "However, the graph neural network does not improve F1 on MS MARCO in our replication.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "source": "paper:primary",
+   "target": "dataset:sst-2@primary",
+   "type": "evaluates_on",
+   "confidence": "high",
+   "attribution": "self",
+   "basis": "explicit",
+   "direction_basis": "陈述主体 → 被陈述对象",
+   "applicability": {
+    "datasets": [
+     "sst-2"
+    ],
+    "tasks": [
+     "classification"
+    ],
+    "metrics": [
+     "accuracy"
+    ],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0007",
+     "quote": "We fine-tune BERT on SST-2 and report accuracy of 0.91 in our classification experiments.",
+     "stance": "self"
+    },
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0011",
+     "quote": "We find that attention accounts for most of the gain on SST-2 classification.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "source": "paper:primary",
+   "target": "dataset:wikitext@primary",
+   "type": "evaluates_on",
+   "confidence": "high",
+   "attribution": "self",
+   "basis": "explicit",
+   "direction_basis": "陈述主体 → 被陈述对象",
+   "applicability": {
+    "datasets": [
+     "wikitext"
+    ],
+    "tasks": [],
+    "metrics": [],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0008",
+     "quote": "The transformer encoder is trained with a contrastive learning objective on Wikitext.",
+     "stance": "unspecified"
+    }
+   ]
+  },
+  {
+   "source": "paper:primary",
+   "target": "finding:we-find-that-attention-accou",
+   "type": "reports_finding",
+   "confidence": "high",
+   "attribution": "self",
+   "basis": "claim_cue",
+   "direction_basis": "论文 → 本文结论",
+   "applicability": {
+    "datasets": [
+     "sst-2"
+    ],
+    "tasks": [
+     "classification"
+    ],
+    "metrics": [],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0011",
+     "quote": "We find that attention accounts for most of the gain on SST-2 classification.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "source": "paper:primary",
+   "target": "material:annotated-corpus@primary",
+   "type": "mentions_material",
+   "confidence": "medium",
+   "attribution": "self",
+   "basis": "mention",
+   "direction_basis": "陈述主体 → 被陈述对象",
+   "applicability": {
+    "datasets": [],
+    "tasks": [],
+    "metrics": [],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0010",
+     "quote": "Our annotated corpus contains 12 000 abstracts from computational linguistics.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "source": "paper:primary",
+   "target": "method:attention@primary",
+   "type": "uses_method",
+   "confidence": "medium",
+   "attribution": "self",
+   "basis": "mention",
+   "direction_basis": "陈述主体 → 被陈述对象",
+   "applicability": {
+    "datasets": [
+     "sst-2"
+    ],
+    "tasks": [
+     "classification"
+    ],
+    "metrics": [],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0011",
+     "quote": "We find that attention accounts for most of the gain on SST-2 classification.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "source": "paper:primary",
+   "target": "method:bert",
+   "type": "uses_method",
+   "confidence": "high",
+   "attribution": "self",
+   "basis": "explicit",
+   "direction_basis": "陈述主体 → 被陈述对象",
+   "applicability": {
+    "datasets": [
+     "sst-2"
+    ],
+    "tasks": [
+     "classification"
+    ],
+    "metrics": [
+     "accuracy"
+    ],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0007",
+     "quote": "We fine-tune BERT on SST-2 and report accuracy of 0.91 in our classification experiments.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "source": "paper:primary",
+   "target": "method:contrastive-learning",
+   "type": "uses_method",
+   "confidence": "high",
+   "attribution": "self",
+   "basis": "explicit",
+   "direction_basis": "陈述主体 → 被陈述对象",
+   "applicability": {
+    "datasets": [
+     "wikitext"
+    ],
+    "tasks": [],
+    "metrics": [],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0008",
+     "quote": "The transformer encoder is trained with a contrastive learning objective on Wikitext.",
+     "stance": "unspecified"
+    }
+   ]
+  },
+  {
+   "source": "paper:primary",
+   "target": "method:transformer@primary",
+   "type": "uses_method",
+   "confidence": "high",
+   "attribution": "self",
+   "basis": "explicit",
+   "direction_basis": "陈述主体 → 被陈述对象",
+   "applicability": {
+    "datasets": [
+     "wikitext"
+    ],
+    "tasks": [],
+    "metrics": [],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0008",
+     "quote": "The transformer encoder is trained with a contrastive learning objective on Wikitext.",
+     "stance": "unspecified"
+    }
+   ]
+  },
+  {
+   "source": "paper:primary",
+   "target": "metric:accuracy@primary",
+   "type": "reports_metric",
+   "confidence": "high",
+   "attribution": "self",
+   "basis": "explicit",
+   "direction_basis": "陈述主体 → 被陈述对象",
+   "applicability": {
+    "datasets": [
+     "sst-2"
+    ],
+    "tasks": [
+     "classification"
+    ],
+    "metrics": [
+     "accuracy"
+    ],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0007",
+     "quote": "We fine-tune BERT on SST-2 and report accuracy of 0.91 in our classification experiments.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "source": "paper:primary",
+   "target": "researcher:devlin@primary",
+   "type": "cites_researcher",
+   "confidence": "high",
+   "attribution": "self",
+   "basis": "citation",
+   "direction_basis": "本文（引用者）→ 被引用研究者",
+   "applicability": {
+    "datasets": [
+     "sst-2"
+    ],
+    "tasks": [],
+    "metrics": [
+     "accuracy"
+    ],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0009",
+     "quote": "Devlin et al. reported that BERT outperforms the CNN baseline on SST-2 by 2.1 accuracy points.",
+     "stance": "reported"
+    }
+   ]
+  },
+  {
+   "source": "paper:primary",
+   "target": "task:classification",
+   "type": "about",
+   "confidence": "medium",
+   "attribution": "self",
+   "basis": "mention",
+   "direction_basis": "陈述主体 → 被陈述对象",
+   "applicability": {
+    "datasets": [
+     "sst-2"
+    ],
+    "tasks": [
+     "classification"
+    ],
+    "metrics": [
+     "accuracy"
+    ],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0007",
+     "quote": "We fine-tune BERT on SST-2 and report accuracy of 0.91 in our classification experiments.",
+     "stance": "self"
+    },
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0011",
+     "quote": "We find that attention accounts for most of the gain on SST-2 classification.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "source": "paper:secondary",
+   "target": "dataset:ms-marco@secondary",
+   "type": "evaluates_on",
+   "confidence": "medium",
+   "attribution": "self",
+   "basis": "mention",
+   "direction_basis": "陈述主体 → 被陈述对象",
+   "applicability": {
+    "datasets": [
+     "ms marco"
+    ],
+    "tasks": [
+     "retrieval"
+    ],
+    "metrics": [],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0013",
+     "quote": "A graph neural network baseline is used for the retrieval task on MS MARCO.",
+     "stance": "unspecified"
+    },
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0014",
+     "quote": "However, the graph neural network does not improve F1 on MS MARCO in our replication.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "source": "paper:secondary",
+   "target": "dataset:sst-2@secondary",
+   "type": "evaluates_on",
+   "confidence": "high",
+   "attribution": "self",
+   "basis": "explicit",
+   "direction_basis": "陈述主体 → 被陈述对象",
+   "applicability": {
+    "datasets": [
+     "sst-2"
+    ],
+    "tasks": [],
+    "metrics": [
+     "f1"
+    ],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0012",
+     "quote": "We evaluate BERT on SST-2 as well, and report F1 scores across datasets.",
+     "stance": "self"
+    },
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0016",
+     "quote": "Our ablation confirms that BERT benefits from contrastive learning on SST-2.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "source": "paper:secondary",
+   "target": "material:annotated-corpus@secondary",
+   "type": "mentions_material",
+   "confidence": "medium",
+   "attribution": "self",
+   "basis": "mention",
+   "direction_basis": "陈述主体 → 被陈述对象",
+   "applicability": {
+    "datasets": [],
+    "tasks": [
+     "classification"
+    ],
+    "metrics": [],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0017",
+     "quote": "The annotated corpus is released with sentence-level classification labels.",
+     "stance": "unspecified"
+    }
+   ]
+  },
+  {
+   "source": "paper:secondary",
+   "target": "method:bert",
+   "type": "uses_method",
+   "confidence": "high",
+   "attribution": "self",
+   "basis": "explicit",
+   "direction_basis": "陈述主体 → 被陈述对象",
+   "applicability": {
+    "datasets": [
+     "sst-2"
+    ],
+    "tasks": [],
+    "metrics": [
+     "f1"
+    ],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0012",
+     "quote": "We evaluate BERT on SST-2 as well, and report F1 scores across datasets.",
+     "stance": "self"
+    },
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0015",
+     "quote": "We compare BERT with the graph neural network baseline under the same tokenizer.",
+     "stance": "self"
+    },
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0016",
+     "quote": "Our ablation confirms that BERT benefits from contrastive learning on SST-2.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "source": "paper:secondary",
+   "target": "method:contrastive-learning",
+   "type": "uses_method",
+   "confidence": "medium",
+   "attribution": "self",
+   "basis": "mention",
+   "direction_basis": "陈述主体 → 被陈述对象",
+   "applicability": {
+    "datasets": [
+     "sst-2"
+    ],
+    "tasks": [],
+    "metrics": [],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0016",
+     "quote": "Our ablation confirms that BERT benefits from contrastive learning on SST-2.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "source": "paper:secondary",
+   "target": "method:graph-neural-network@secondary",
+   "type": "uses_method",
+   "confidence": "high",
+   "attribution": "self",
+   "basis": "explicit",
+   "direction_basis": "陈述主体 → 被陈述对象",
+   "applicability": {
+    "datasets": [
+     "ms marco"
+    ],
+    "tasks": [
+     "retrieval"
+    ],
+    "metrics": [],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0013",
+     "quote": "A graph neural network baseline is used for the retrieval task on MS MARCO.",
+     "stance": "unspecified"
+    },
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0014",
+     "quote": "However, the graph neural network does not improve F1 on MS MARCO in our replication.",
+     "stance": "self"
+    },
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0015",
+     "quote": "We compare BERT with the graph neural network baseline under the same tokenizer.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "source": "paper:secondary",
+   "target": "metric:f1@secondary",
+   "type": "reports_metric",
+   "confidence": "medium",
+   "attribution": "self",
+   "basis": "mention",
+   "direction_basis": "陈述主体 → 被陈述对象",
+   "applicability": {
+    "datasets": [
+     "sst-2"
+    ],
+    "tasks": [],
+    "metrics": [
+     "f1"
+    ],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0012",
+     "quote": "We evaluate BERT on SST-2 as well, and report F1 scores across datasets.",
+     "stance": "self"
+    },
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0014",
+     "quote": "However, the graph neural network does not improve F1 on MS MARCO in our replication.",
+     "stance": "self"
+    }
+   ]
+  },
+  {
+   "source": "paper:secondary",
+   "target": "task:classification",
+   "type": "about",
+   "confidence": "medium",
+   "attribution": "self",
+   "basis": "mention",
+   "direction_basis": "陈述主体 → 被陈述对象",
+   "applicability": {
+    "datasets": [],
+    "tasks": [
+     "classification"
+    ],
+    "metrics": [],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0017",
+     "quote": "The annotated corpus is released with sentence-level classification labels.",
+     "stance": "unspecified"
+    }
+   ]
+  },
+  {
+   "source": "paper:secondary",
+   "target": "task:retrieval@secondary",
+   "type": "about",
+   "confidence": "medium",
+   "attribution": "self",
+   "basis": "mention",
+   "direction_basis": "陈述主体 → 被陈述对象",
+   "applicability": {
+    "datasets": [
+     "ms marco"
+    ],
+    "tasks": [
+     "retrieval"
+    ],
+    "metrics": [],
+    "from_sentence": true
+   },
+   "reported_by": null,
+   "evidence": [
+    {
+     "source_id": "secondary",
+     "paragraph_id": "JATS-P-0013",
+     "quote": "A graph neural network baseline is used for the retrieval task on MS MARCO.",
+     "stance": "unspecified"
+    }
+   ]
+  },
+  {
+   "source": "researcher:devlin@primary",
+   "target": "dataset:sst-2@primary",
+   "type": "evaluates_on",
+   "confidence": "medium",
+   "attribution": "reported_elsewhere",
+   "basis": "mention",
+   "direction_basis": "陈述主体 → 被陈述对象",
+   "applicability": {
+    "datasets": [
+     "sst-2"
+    ],
+    "tasks": [],
+    "metrics": [
+     "accuracy"
+    ],
+    "from_sentence": true
+   },
+   "reported_by": "researcher:devlin@primary",
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0009",
+     "quote": "Devlin et al. reported that BERT outperforms the CNN baseline on SST-2 by 2.1 accuracy points.",
+     "stance": "reported"
+    }
+   ]
+  },
+  {
+   "source": "researcher:devlin@primary",
+   "target": "method:bert",
+   "type": "uses_method",
+   "confidence": "medium",
+   "attribution": "reported_elsewhere",
+   "basis": "mention",
+   "direction_basis": "陈述主体 → 被陈述对象",
+   "applicability": {
+    "datasets": [
+     "sst-2"
+    ],
+    "tasks": [],
+    "metrics": [
+     "accuracy"
+    ],
+    "from_sentence": true
+   },
+   "reported_by": "researcher:devlin@primary",
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0009",
+     "quote": "Devlin et al. reported that BERT outperforms the CNN baseline on SST-2 by 2.1 accuracy points.",
+     "stance": "reported"
+    }
+   ]
+  },
+  {
+   "source": "researcher:devlin@primary",
+   "target": "method:cnn@primary",
+   "type": "uses_method",
+   "confidence": "medium",
+   "attribution": "reported_elsewhere",
+   "basis": "mention",
+   "direction_basis": "陈述主体 → 被陈述对象",
+   "applicability": {
+    "datasets": [
+     "sst-2"
+    ],
+    "tasks": [],
+    "metrics": [
+     "accuracy"
+    ],
+    "from_sentence": true
+   },
+   "reported_by": "researcher:devlin@primary",
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0009",
+     "quote": "Devlin et al. reported that BERT outperforms the CNN baseline on SST-2 by 2.1 accuracy points.",
+     "stance": "reported"
+    }
+   ]
+  },
+  {
+   "source": "researcher:devlin@primary",
+   "target": "metric:accuracy@primary",
+   "type": "reports_metric",
+   "confidence": "medium",
+   "attribution": "reported_elsewhere",
+   "basis": "mention",
+   "direction_basis": "陈述主体 → 被陈述对象",
+   "applicability": {
+    "datasets": [
+     "sst-2"
+    ],
+    "tasks": [],
+    "metrics": [
+     "accuracy"
+    ],
+    "from_sentence": true
+   },
+   "reported_by": "researcher:devlin@primary",
+   "evidence": [
+    {
+     "source_id": "primary",
+     "paragraph_id": "JATS-P-0009",
+     "quote": "Devlin et al. reported that BERT outperforms the CNN baseline on SST-2 by 2.1 accuracy points.",
+     "stance": "reported"
+    }
+   ]
+  }
+ ],
+ "merges": [
+  {
+   "kind": "dataset",
+   "label": "sst-2",
+   "candidate_ids": [
+    "dataset:sst-2@primary",
+    "dataset:sst-2@secondary"
+   ],
+   "sources": [
+    "primary",
+    "secondary"
+   ],
+   "decision": "keep_separate",
+   "basis": [
+    "类型 dataset，规范化键相同：sst 2",
+    "两篇都显式出现：['primary', 'secondary']",
+    "原文字面写法：['SST-2']",
+    "同名只说明写法相同，不构成同一实例的证据"
+   ],
+   "conflict": "两篇共用数据集名，但未报告划分/版本/许可，不得视为同一数据集实例"
+  },
+  {
+   "kind": "material",
+   "label": "annotated corpus",
+   "candidate_ids": [
+    "material:annotated-corpus@primary",
+    "material:annotated-corpus@secondary"
+   ],
+   "sources": [
+    "primary",
+    "secondary"
+   ],
+   "decision": "keep_separate",
+   "basis": [
+    "类型 material，规范化键相同：annotated corpu",
+    "两篇都显式出现：['primary', 'secondary']",
+    "原文字面写法：['annotated corpus']",
+    "同名只说明写法相同，不构成同一实例的证据"
+   ],
+   "conflict": "通用语料/样本名称不代表两篇用了同一物理样品、同一批受试或同一采集条件"
+  },
+  {
+   "kind": "method",
+   "label": "bert",
+   "candidate_ids": [
+    "method:bert@primary",
+    "method:bert@secondary"
+   ],
+   "sources": [
+    "primary",
+    "secondary"
+   ],
+   "decision": "merge",
+   "basis": [
+    "类型 method，规范化键相同：bert",
+    "两篇都显式出现：['primary', 'secondary']",
+    "原文字面写法：['BERT']",
+    "只合并方法/任务名称，不断言同一模型权重、超参或实验条件"
+   ],
+   "conflict": ""
+  },
+  {
+   "kind": "method",
+   "label": "contrastive learning",
+   "candidate_ids": [
+    "method:contrastive-learning@primary",
+    "method:contrastive-learning@secondary"
+   ],
+   "sources": [
+    "primary",
+    "secondary"
+   ],
+   "decision": "merge",
+   "basis": [
+    "类型 method，规范化键相同：contrastive learning",
+    "两篇都显式出现：['primary', 'secondary']",
+    "原文字面写法：['contrastive learning']",
+    "只合并方法/任务名称，不断言同一模型权重、超参或实验条件"
+   ],
+   "conflict": ""
+  },
+  {
+   "kind": "task",
+   "label": "classification",
+   "candidate_ids": [
+    "task:classification@primary",
+    "task:classification@secondary"
+   ],
+   "sources": [
+    "primary",
+    "secondary"
+   ],
+   "decision": "merge",
+   "basis": [
+    "类型 task，规范化键相同：classification",
+    "两篇都显式出现：['primary', 'secondary']",
+    "原文字面写法：['classification']",
+    "只合并方法/任务名称，不断言同一模型权重、超参或实验条件"
+   ],
+   "conflict": ""
+  }
+ ],
+ "measurements": [
+  {
+   "metric": "accuracy",
+   "value": 0.91,
+   "unit": "",
+   "kind": "absolute",
+   "source_id": "primary",
+   "paragraph_id": "JATS-P-0007",
+   "stance": "self",
+   "quote": "We fine-tune BERT on SST-2 and report accuracy of 0.91 in our classification experiments."
+  },
+  {
+   "metric": "accuracy",
+   "value": 2.1,
+   "unit": "points",
+   "kind": "delta",
+   "source_id": "primary",
+   "paragraph_id": "JATS-P-0009",
+   "stance": "reported",
+   "quote": "Devlin et al. reported that BERT outperforms the CNN baseline on SST-2 by 2.1 accuracy points."
+  }
+ ],
+ "conflicts": {
+  "keep_separate": [
+   {
+    "kind": "dataset",
+    "label": "sst-2",
+    "candidate_ids": [
+     "dataset:sst-2@primary",
+     "dataset:sst-2@secondary"
+    ],
+    "sources": [
+     "primary",
+     "secondary"
+    ],
+    "decision": "keep_separate",
+    "basis": [
+     "类型 dataset，规范化键相同：sst 2",
+     "两篇都显式出现：['primary', 'secondary']",
+     "原文字面写法：['SST-2']",
+     "同名只说明写法相同，不构成同一实例的证据"
+    ],
+    "conflict": "两篇共用数据集名，但未报告划分/版本/许可，不得视为同一数据集实例"
+   },
+   {
+    "kind": "material",
+    "label": "annotated corpus",
+    "candidate_ids": [
+     "material:annotated-corpus@primary",
+     "material:annotated-corpus@secondary"
+    ],
+    "sources": [
+     "primary",
+     "secondary"
+    ],
+    "decision": "keep_separate",
+    "basis": [
+     "类型 material，规范化键相同：annotated corpu",
+     "两篇都显式出现：['primary', 'secondary']",
+     "原文字面写法：['annotated corpus']",
+     "同名只说明写法相同，不构成同一实例的证据"
+    ],
+    "conflict": "通用语料/样本名称不代表两篇用了同一物理样品、同一批受试或同一采集条件"
+   }
+  ],
+  "homonyms": [],
+  "unresolved_edges": [
+   {
+    "edge": "method:bert -outperforms-> method:cnn@primary",
+    "confidence": "medium",
+    "attribution": "reported_elsewhere",
+    "reason": "共现或转述，不是本文的直接陈述"
+   },
+   {
+    "edge": "method:bert -reports_metric-> metric:accuracy@primary",
+    "confidence": "low",
+    "attribution": "reported_elsewhere",
+    "reason": "共现或转述，不是本文的直接陈述"
+   },
+   {
+    "edge": "method:bert -reports_metric-> metric:accuracy@primary",
+    "confidence": "low",
+    "attribution": "self",
+    "reason": "共现或转述，不是本文的直接陈述"
+   },
+   {
+    "edge": "method:bert -reports_metric-> metric:f1@secondary",
+    "confidence": "low",
+    "attribution": "self",
+    "reason": "共现或转述，不是本文的直接陈述"
+   },
+   {
+    "edge": "method:cnn@primary -reports_metric-> metric:accuracy@primary",
+    "confidence": "low",
+    "attribution": "reported_elsewhere",
+    "reason": "共现或转述，不是本文的直接陈述"
+   },
+   {
+    "edge": "method:graph-neural-network@secondary -reports_metric-> metric:f1@secondary",
+    "confidence": "low",
+    "attribution": "self",
+    "reason": "共现或转述，不是本文的直接陈述"
+   },
+   {
+    "edge": "researcher:devlin@primary -evaluates_on-> dataset:sst-2@primary",
+    "confidence": "medium",
+    "attribution": "reported_elsewhere",
+    "reason": "共现或转述，不是本文的直接陈述"
+   },
+   {
+    "edge": "researcher:devlin@primary -uses_method-> method:bert",
+    "confidence": "medium",
+    "attribution": "reported_elsewhere",
+    "reason": "共现或转述，不是本文的直接陈述"
+   },
+   {
+    "edge": "researcher:devlin@primary -uses_method-> method:cnn@primary",
+    "confidence": "medium",
+    "attribution": "reported_elsewhere",
+    "reason": "共现或转述，不是本文的直接陈述"
+   },
+   {
+    "edge": "researcher:devlin@primary -reports_metric-> metric:accuracy@primary",
+    "confidence": "medium",
+    "attribution": "reported_elsewhere",
+    "reason": "共现或转述，不是本文的直接陈述"
+   }
+  ]
+ },
+ "coverage": {
+  "entity_types": {
+   "required": [
+    "researcher",
+    "material",
+    "method",
+    "task",
+    "metric",
+    "finding"
+   ],
+   "covered": [
+    "researcher",
+    "material",
+    "method",
+    "task",
+    "metric",
+    "finding"
+   ],
+   "missing": [],
+   "n_required": 6,
+   "n_covered": 6
+  },
+  "relation_types": {
+   "required": [
+    "uses_method",
+    "compared_with",
+    "outperforms",
+    "supports",
+    "contradicts"
+   ],
+   "covered": [
+    "uses_method",
+    "compared_with",
+    "outperforms",
+    "supports",
+    "contradicts"
+   ],
+   "missing": [],
+   "n_required": 5,
+   "n_covered": 5,
+   "all_covered": [
+    "about",
+    "cites_researcher",
+    "compared_with",
+    "contradicts",
+    "evaluates_on",
+    "mentions_material",
+    "outperforms",
+    "reports_finding",
+    "reports_metric",
+    "supports",
+    "uses_method"
+   ]
+  },
+  "evidence_fields": {
+   "required": [
+    "source_id",
+    "paragraph_id",
+    "quote"
+   ],
+   "unit": "source_id+paragraph_id+quote",
+   "strength_levels": "high/medium/low",
+   "stance_levels": [
+    "self",
+    "reported",
+    "unspecified"
+   ]
+  },
+  "queries": {
+   "n_query": 6,
+   "n_with_results": 6,
+   "n_with_subgraph": 6,
+   "required_min_with_results": 3
+  },
+  "measurements": {
+   "n": 2,
+   "cross_paper_aggregation": "none（逐篇分列，不汇总）"
+  }
+ },
+ "boundary": {
+  "unmatched_candidates": [],
+  "rejected_relation_candidates": [],
+  "pdf_inputs": [],
+  "no_page_numbers": "证据不含页码；位置是 JATS paragraph_id"
+ },
+ "schema_check": {
+  "ok": true,
+  "schema": "rules/graph.schema.json",
+  "problems": []
+ }
+}

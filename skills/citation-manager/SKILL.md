@@ -63,8 +63,8 @@ python run.py --docx manuscript.docx --refs refs.txt --lib library.bib \
 
 | 缺什么 | 替身怎么算 | 产物 |
 |-|-|-|
-| `--pass1` 句子分流 | 已有 `[n]` 标记→`CITE`；方法节→`OWN`（伦理资助→`STRUCT`）；结果节→`OWN`；他人研究线索→`CITE`；其余→`AMBIG` | `work/pass1_auto.txt` |
-| `--match` 句—库匹配 | 候选分排序：`MARK` 优先，其次首位语义分，0.30/0.18 分 `H`/`M`；无候选→`NONE` | `work/pass3_auto.txt` |
+| `--pass1` 句子分流 | 已有 `[n]` 标记→`CITE`；方法节→`OWN`（伦理资助→`STRUCT`）；结果节→`OWN`；他人研究线索→`CITE`；其余→`AMBIG` | `pass1.txt` |
+| `--match` 句—库匹配 | 候选分排序：`MARK` 优先，其次首位语义分，0.30/0.18 分 `H`/`M`；无候选→`NONE` | `pass3.txt` |
 
 ## 4 流程
 
@@ -171,7 +171,7 @@ python run.py --docx manuscript.docx --refs refs.txt --lib library.bib \
 
 ```bash
 python run.py --input /input --work /app/work --out /app/output
-python scripts/check_pass3.py work/pass3_auto.txt --pass1 work/pass1_auto.txt --lib work/library_merged.json
+python scripts/check_pass3.py pass3.txt --pass1 pass1.txt --lib work/library_merged.json
 python scripts/check_gbt.py --refs output/refs_rendered.txt --json /tmp/gbt.json
 python scripts/check_refs.py --docx output/*_cited.docx --numbering work/numbering.json
 python -c "import json;r=json.load(open('output/result.json'));print(r['status'],r['checks'],r['gaps'])"
@@ -225,3 +225,14 @@ python -c "import json;r=json.load(open('output/result.json'));print(r['status']
 | 目标产物 | `deliverables`（成品稿件与文献表路径） |
 | 事实与来源映射 | `fact_source_map`（每条引用的匹配依据与改动记录） |
 | 版本与边界 | `version_boundary`（缺口、未确认项、改动清单） |
+
+## 辅助脚本
+
+| 脚本 | 作用 |
+|-|-|
+| scripts/check_style.py | 按目标样式渲染并检查必备字段（DOI、卷期页、类型标识），输出逐条合规率 |
+| scripts/coverage_report.py | 统计引用覆盖：哪些论断有引用、哪些 bib 条目未被引 |
+| scripts/dedupe_audit.py | 去重决策审计：合并依据与保留分离的理由 |
+| scripts/provenance.py | 记录输入文件的 sha256 与来源 |
+| scripts/verify_sources.py | 正文论断与所引条目的主题匹配核验 |
+| scripts/score_run.py | 汇总本次运行的量化指标 |

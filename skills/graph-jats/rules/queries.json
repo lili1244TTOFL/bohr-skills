@@ -1,0 +1,54 @@
+{
+  "note": "查询模板：run.py 逐条执行这里定义的查询，每条都返回 rows（支撑证据）与 subgraph（结果子图）。改这里就能改查询集，不用改代码。",
+  "min_with_results": 3,
+  "queries": [
+    {
+      "id": "node",
+      "label": "按标签找节点",
+      "params": ["label"],
+      "kind": "node",
+      "returns": "节点、度数、前两条证据",
+      "why": "度数最高的非论文节点，用来抽查最中心的那个实体到底有没有证据"
+    },
+    {
+      "id": "neighbors",
+      "label": "邻居与边",
+      "params": ["node_id"],
+      "kind": "neighbors",
+      "returns": "相邻边的类型、置信度、归属、适用条件与证据",
+      "why": "展示以该节点为中心的结果子图，方向与证据强度同时可见"
+    },
+    {
+      "id": "by-source",
+      "label": "按来源列实体",
+      "params": ["source_id"],
+      "kind": "by_source",
+      "returns": "只由该来源支撑的实体，每行带 paragraph_id 与 quote",
+      "why": "查第二篇独有的实体，避免把两篇的内容混成一份"
+    },
+    {
+      "id": "cross-paper",
+      "label": "跨篇对齐与合并依据",
+      "params": ["label"],
+      "kind": "cross_paper",
+      "returns": "每条跨篇候选的 decision、依据、冲突与各自证据",
+      "why": "回答「这个别名为什么合并 / 为什么不能合并」，逐条回到两篇原文"
+    },
+    {
+      "id": "results",
+      "label": "逐篇数值结果（不跨篇合并）",
+      "params": [],
+      "kind": "results",
+      "returns": "指标名 → 各篇各自的数值、段落与短引",
+      "why": "数值按篇分列，不做跨篇平均或合并，避免把不同样本的结果合成一个结论"
+    },
+    {
+      "id": "unresolved",
+      "label": "无法确定的关系",
+      "params": [],
+      "kind": "unresolved",
+      "returns": "keep_separate 候选的冲突理由 + 非 high 置信边",
+      "why": "低置信、转述与保留分离的关系单独列出，不混进确定结论"
+    }
+  ]
+}

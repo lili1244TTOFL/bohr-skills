@@ -1,8 +1,9 @@
 {
   "case_id": "graph-demo",
+  "note": "示例材料索引：列出两篇正文段落的文件，run.py 按它定位材料，不靠文件名猜。",
   "sources": ["primary", "secondary"],
   "papers": [
-    {"source_id": "primary", "file": "primary-material.json", "paragraphs": 2},
-    {"source_id": "secondary", "file": "secondary-material.json", "paragraphs": 2}
+    {"source_id": "primary", "file": "primary-material.json", "paragraphs": 5},
+    {"source_id": "secondary", "file": "secondary-material.json", "paragraphs": 6}
   ]
 }

@@ -1,0 +1,46 @@
+{
+  "note": "graph.json 的最小结构契约。run.py 的 validate_schema() 逐条读这里做校验，校验失败会把 status 压成 partial 并写进 gaps。itemRequired 是本项目的自定义键，含义是「数组里每一项都必须带的字段」。",
+  "required": ["case_id", "sources", "nodes", "edges", "merges", "measurements", "coverage", "papers"],
+  "properties": {
+    "case_id": {"type": "string"},
+    "skill_version": {"type": "string"},
+    "sources": {"type": "array", "minItems": 1},
+    "papers": {"type": "array", "minItems": 1},
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "itemRequired": ["id", "type", "label", "evidence"]
+    },
+    "edges": {
+      "type": "array",
+      "minItems": 1,
+      "itemRequired": ["source", "target", "type", "confidence", "attribution", "direction_basis", "applicability", "evidence"]
+    },
+    "merges": {"type": "array", "itemRequired": ["candidate_ids", "decision", "basis", "conflict"]},
+    "measurements": {"type": "array"},
+    "coverage": {"type": "object"},
+    "conflicts": {"type": "object"},
+    "boundary": {"type": "object"},
+    "schema_check": {"type": "object"}
+  },
+  "evidence_item_required": ["source_id", "paragraph_id", "quote"],
+  "evidence_unit": "source_id+paragraph_id+quote",
+  "location_rule": "paragraph_id 是组织方 JATS 段落 ID；本图谱不含 PDF 页码，任何页码都不合法",
+  "confidence_levels": ["high", "medium", "low"],
+  "attribution_levels": ["self", "reported_elsewhere"],
+  "entity_types": ["paper", "researcher", "material", "method", "dataset", "metric", "task", "finding"],
+  "relation_signatures": {
+    "uses_method": [["paper", "method"], ["researcher", "method"]],
+    "evaluates_on": [["paper", "dataset"], ["researcher", "dataset"]],
+    "reports_metric": [["paper", "metric"], ["researcher", "metric"], ["method", "metric"]],
+    "about": [["paper", "task"], ["researcher", "task"]],
+    "mentions_material": [["paper", "material"], ["researcher", "material"]],
+    "cites_researcher": [["paper", "researcher"]],
+    "authored_by": [["researcher", "paper"]],
+    "reports_finding": [["paper", "finding"]],
+    "compared_with": [["method", "method"], ["dataset", "dataset"], ["metric", "metric"]],
+    "outperforms": [["method", "method"]],
+    "supports": [["method", "method"], ["method", "finding"], ["finding", "method"]],
+    "contradicts": [["method", "metric"], ["method", "method"], ["finding", "method"]]
+  }
+}

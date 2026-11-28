@@ -1,6 +1,7 @@
 {
   "source_id": "primary",
   "doi": "10.1000/example.primary",
+  "note": "示例材料：非真实论文，仅用于演示接口与流程，不冒充正式案例结果。",
   "paragraphs": [
     {
       "paragraph_id": "JATS-P-0007",
@@ -9,6 +10,18 @@
     {
       "paragraph_id": "JATS-P-0008",
       "text": "The transformer encoder is trained with a contrastive learning objective on Wikitext."
+    },
+    {
+      "paragraph_id": "JATS-P-0009",
+      "text": "Devlin et al. reported that BERT outperforms the CNN baseline on SST-2 by 2.1 accuracy points."
+    },
+    {
+      "paragraph_id": "JATS-P-0010",
+      "text": "Our annotated corpus contains 12 000 abstracts from computational linguistics."
+    },
+    {
+      "paragraph_id": "JATS-P-0011",
+      "text": "We find that attention accounts for most of the gain on SST-2 classification."
     }
   ]
 }

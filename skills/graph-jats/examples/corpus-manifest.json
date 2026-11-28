@@ -22,5 +22,6 @@
       "license": "example-only；示例材料，非真实论文，不代表可再分发许可",
       "sha256": "d72e8d6d03e26fd3"
     }
-  ]
+  ],
+  "note": "示例材料：DOI 前缀 10.1000 是示例用途；根 DOI/title/authors 只归第一篇，不得套到第二篇。"
 }

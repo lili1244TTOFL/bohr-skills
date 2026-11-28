@@ -1,0 +1,8 @@
+{
+  "case_id": "graph-demo-incremental",
+  "note": "增量更新演示输入：只含第三篇材料。用法见 SKILL.md 第 3 节 --append 一栏。",
+  "sources": ["tertiary"],
+  "papers": [
+    {"source_id": "tertiary", "file": "tertiary-material.json", "paragraphs": 3}
+  ]
+}

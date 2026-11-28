@@ -24,6 +24,10 @@ DOCX_MAGIC = b"PK\x03\x04"
 PDF_MAGIC = b"%PDF"
 BIB_RE = re.compile(r"^\s*@\w+\s*\{", re.M)
 RIS_RE = re.compile(r"^TY  - ", re.M)
+ENW_RE = re.compile(r"^%0\s", re.M)
+CNKI_RE = re.compile(r"^\{?(文献类型|Reference Type)\}?\s*[:：]", re.M)
+CN_TAGS_RE = re.compile(r"^\s*(题名|作者|刊名)\s*[:：]", re.M)
+REFWORKS_RE = re.compile(r"^(RT|T1|A1)\s*-\s", re.M)
 REF_RE = re.compile(r"^\s*\[\d+\]\s+\S", re.M)
 
 
@@ -50,6 +54,12 @@ def sniff(path: Path) -> str:
         return "bib"
     if RIS_RE.search(text):
         return "ris"
+    if ENW_RE.search(text):
+        return "enw"
+    if CNKI_RE.search(text) or CN_TAGS_RE.search(text):
+        return "cnki"
+    if REFWORKS_RE.search(text):
+        return "refworks"
     if re.search(r"^\s*(#{1,6}\s|\d+(\.\d+)*\s+\S)", text, re.M):
         return "md"
     return "txt"
@@ -120,7 +130,8 @@ def load(input_dir: str | Path) -> dict:
             continue
         kind = sniff(p)
         plan["files"].append({"path": str(p), "kind": kind, "bytes": p.stat().st_size})
-        if kind in ("bib", "ris"):
+        if kind in ("bib", "ris", "enw", "cnki", "refworks"):
+            # EndNote(.enw) 与 CNKI/NoteExpress/RefWorks 题录同样当文献库输入
             plan["libs"].append(str(p))
         elif kind == "docx":
             doc_cand.append((p.stat().st_size, p))

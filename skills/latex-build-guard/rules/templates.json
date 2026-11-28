@@ -1,0 +1,87 @@
+{
+  "version": "1.0.0",
+  "basis": "题面「模板适配：处理期刊、会议或学位论文模板的版式约束、必填项与文件结构」与「结果完整性：任务要求的改动点、模板必填项与配套文件是否逐项覆盖」",
+  "how_to_extend": "改这个文件即可加模板：profiles.<名字>.requires[] 里一项 = 一个必填项；pattern 是对源码（已抹掉注释/verbatim）的正则；severity 建议只写 warn（缺标题不等于编译不过）",
+  "notes": [
+    "只有文档里出现 \\documentclass 时才比对：片段稿没有模板可言",
+    "类名匹配顺序：精确 → 子串 → generic 兜底（ctexart 会落到 ctex）",
+    "T16 只报缺失项并给 hint，不替作者补内容（标题/作者/摘要是作者事实）"
+  ],
+  "profiles": {
+    "generic": {
+      "note": "任何完整学术文稿的骨架项",
+      "requires": [
+        {"id": "R01", "name": "标题", "pattern": "\\\\title\\s*(?:\\[[^\\]]*\\])?\\s*\\{", "show": "\\title{...}", "severity": "warn", "hint": "补 \\title{...}；模板一般要求标题在 \\maketitle 之前", "basis": "题面「模板适配：…必填项」"},
+        {"id": "R02", "name": "作者", "pattern": "\\\\author\\s*(?:\\[[^\\]]*\\])?\\s*\\{", "show": "\\author{...}", "severity": "warn", "hint": "补 \\author{...}（含单位可用 \\thanks 或 \\affil）", "basis": "题面「模板适配：…必填项」"},
+        {"id": "R03", "name": "正文开始标记", "pattern": "\\\\begin\\{document\\}", "show": "\\begin{document}", "severity": "warn", "hint": "主文件需要有 \\begin{document}", "basis": "题面「模板适配：…文件结构」"},
+        {"id": "R04", "name": "摘要", "pattern": "\\\\begin\\{abstract\\}|\\\\abstract\\s*\\{", "show": "abstract 环境", "severity": "warn", "hint": "学术文稿一般要有 abstract；没有就在 gaps 里说明这是节选/未含摘要", "basis": "题面「模板适配：…必填项」"},
+        {"id": "R05", "name": "标题落版", "pattern": "\\\\maketitle", "show": "\\maketitle", "severity": "warn", "hint": "模板类多用 \\maketitle 落版；若模板用自定义命令（如 \\maketitlepage）需自行替换", "basis": "题面「模板适配：…必填项」"}
+      ]
+    },
+    "article": {
+      "note": "标准 article：与 generic 相同，不额外加项",
+      "requires": []
+    },
+    "llncs": {
+      "note": "Springer LNCS（会议）",
+      "requires": [
+        {"id": "L01", "name": "标题", "pattern": "\\\\title\\s*\\{", "show": "\\title{...}", "severity": "warn", "hint": "LNCS 用 \\title{...}", "basis": "题面「模板适配：…必填项」"},
+        {"id": "L02", "name": "作者", "pattern": "\\\\author\\s*(?:\\[[^\\]]*\\])?\\s*\\{", "show": "\\author{...}", "severity": "warn", "hint": "LNCS 用 \\author{...}", "basis": "题面「模板适配：…必填项」"},
+        {"id": "L03", "name": "单位", "pattern": "\\\\institute\\s*\\{", "show": "\\institute{...}", "severity": "warn", "hint": "LNCS 要求 \\institute{...}（多单位用 \\and 分隔）", "basis": "题面「模板适配：…必填项」"},
+        {"id": "L04", "name": "投稿标题落版", "pattern": "\\\\maketitle", "show": "\\maketitle", "severity": "warn", "hint": "LNCS 用 \\maketitle 落版", "basis": "题面「模板适配：…必填项」"},
+        {"id": "L05", "name": "摘要", "pattern": "\\\\begin\\{abstract\\}", "show": "abstract 环境", "severity": "warn", "hint": "LNCS 摘要用 abstract 环境", "basis": "题面「模板适配：…必填项」"}
+      ]
+    },
+    "IEEEtran": {
+      "note": "IEEE 会议/期刊",
+      "requires": [
+        {"id": "I01", "name": "标题", "pattern": "\\\\title\\s*\\{", "show": "\\title{...}", "severity": "warn", "hint": "IEEEtran 用 \\title{...}", "basis": "题面「模板适配：…必填项」"},
+        {"id": "I02", "name": "作者块", "pattern": "\\\\author\\s*\\{", "show": "\\author{...}", "severity": "warn", "hint": "IEEEtran 用 \\author{...} + \\thanks 标单位", "basis": "题面「模板适配：…必填项」"},
+        {"id": "I03", "name": "摘要", "pattern": "\\\\begin\\{abstract\\}", "show": "abstract 环境", "severity": "warn", "hint": "IEEEtran 摘要用 abstract 环境", "basis": "题面「模板适配：…必填项」"},
+        {"id": "I04", "name": "索引词", "pattern": "\\\\begin\\{IEEEkeywords\\}|\\\\keywords\\s*\\{", "show": "IEEEkeywords 环境", "severity": "warn", "hint": "IEEEtran 要求 Keywords；期刊版用 \\begin{IEEEkeywords}", "basis": "题面「模板适配：…必填项」"},
+        {"id": "I05", "name": "标题落版", "pattern": "\\\\maketitle", "show": "\\maketitle", "severity": "warn", "hint": "IEEEtran 用 \\maketitle", "basis": "题面「模板适配：…必填项」"}
+      ]
+    },
+    "acmart": {
+      "note": "ACM 期刊/会议（acmart）",
+      "requires": [
+        {"id": "A01", "name": "标题", "pattern": "\\\\title\\s*\\{", "show": "\\title{...}", "severity": "warn", "hint": "acmart 用 \\title{...}", "basis": "题面「模板适配：…必填项」"},
+        {"id": "A02", "name": "作者", "pattern": "\\\\author\\s*\\{", "show": "\\author{...}", "severity": "warn", "hint": "acmart 用 \\author{...} + \\affiliation{...}", "basis": "题面「模板适配：…必填项」"},
+        {"id": "A03", "name": "单位", "pattern": "\\\\affiliation\\s*\\{", "show": "\\affiliation{...}", "severity": "warn", "hint": "acmart 要求 \\affiliation 块（含 institution/city/country）", "basis": "题面「模板适配：…必填项」"},
+        {"id": "A04", "name": "摘要", "pattern": "\\\\begin\\{abstract\\}", "show": "abstract 环境", "severity": "warn", "hint": "acmart 摘要用 abstract 环境", "basis": "题面「模板适配：…必填项」"},
+        {"id": "A05", "name": "CCS 概念", "pattern": "\\\\begin\\{CCSXML\\}|\\\\ccsdesc", "show": "CCSXML / \\ccsdesc", "severity": "warn", "hint": "ACM 投稿要求 CCS Concepts（\\begin{CCSXML}…\\ccsdesc）", "basis": "题面「模板适配：…必填项」"},
+        {"id": "A06", "name": "关键词", "pattern": "\\\\keywords\\s*\\{", "show": "\\keywords{...}", "severity": "warn", "hint": "acmart 用 \\keywords{...}", "basis": "题面「模板适配：…必填项」"}
+      ]
+    },
+    "elsarticle": {
+      "note": "Elsevier（elsarticle）",
+      "requires": [
+        {"id": "E01", "name": "frontmatter", "pattern": "\\\\begin\\{frontmatter\\}", "show": "begin{frontmatter}", "severity": "warn", "hint": "elsarticle 要求 \\begin{frontmatter}…\\end{frontmatter} 包住标题块", "basis": "题面「模板适配：…文件结构」"},
+        {"id": "E02", "name": "标题", "pattern": "\\\\title\\s*(?:\\[[^\\]]*\\])?\\s*\\{", "show": "\\title{...}", "severity": "warn", "hint": "elsarticle 用 \\title{...}", "basis": "题面「模板适配：…必填项」"},
+        {"id": "E03", "name": "作者", "pattern": "\\\\author\\s*(?:\\[[^\\]]*\\])?\\s*\\{", "show": "\\author{...}", "severity": "warn", "hint": "elsarticle 用 \\author{...} + \\affiliation{...}", "basis": "题面「模板适配：…必填项」"},
+        {"id": "E04", "name": "摘要", "pattern": "\\\\begin\\{abstract\\}", "show": "abstract 环境", "severity": "warn", "hint": "elsarticle 摘要用 abstract 环境", "basis": "题面「模板适配：…必填项」"},
+        {"id": "E05", "name": "关键词", "pattern": "\\\\begin\\{keyword\\}|\\\\keywords?\\s*\\{", "show": "keyword 环境", "severity": "warn", "hint": "elsarticle 用 \\begin{keyword}…\\end{keyword}", "basis": "题面「模板适配：…必填项」"}
+      ]
+    },
+    "ctex": {
+      "note": "中文稿（ctexart / ctexbook / ctexrep）",
+      "requires": [
+        {"id": "C01", "name": "标题", "pattern": "\\\\title\\s*\\{", "show": "\\title{...}", "severity": "warn", "hint": "中文稿同样要 \\title{...}", "basis": "题面「模板适配：…必填项」"},
+        {"id": "C02", "name": "作者", "pattern": "\\\\author\\s*\\{", "show": "\\author{...}", "severity": "warn", "hint": "补 \\author{...}", "basis": "题面「模板适配：…必填项」"},
+        {"id": "C03", "name": "摘要", "pattern": "\\\\begin\\{abstract\\}", "show": "abstract 环境", "severity": "warn", "hint": "中文摘要用 abstract 环境（ctex 会排成“摘要”）", "basis": "题面「模板适配：…必填项」"},
+        {"id": "C04", "name": "标题落版", "pattern": "\\\\maketitle", "show": "\\maketitle", "severity": "warn", "hint": "补 \\maketitle", "basis": "题面「模板适配：…必填项」"},
+        {"id": "C05", "name": "关键词", "pattern": "\\\\keywords?\\s*\\{|\\\\begin\\{keywords?\\}", "show": "\\keywords{...}", "severity": "warn", "hint": "中文期刊多要求关键词，用 \\keywords{...}（视模板宏包而定）", "basis": "题面「模板适配：…必填项」"}
+      ]
+    },
+    "thesis": {
+      "note": "学位论文类（thesis / *uthesis / hithesis / ustcthesis 等；类名含 thesis 即命中）",
+      "requires": [
+        {"id": "T01", "name": "标题", "pattern": "\\\\title\\s*\\{", "show": "\\title{...}", "severity": "warn", "hint": "学位论文模板用 \\title{...}（英文题目另见 \\entitle）", "basis": "题面「模板适配：…必填项」"},
+        {"id": "T02", "name": "作者", "pattern": "\\\\author\\s*\\{", "show": "\\author{...}", "severity": "warn", "hint": "补 \\author{...}", "basis": "题面「模板适配：…必填项」"},
+        {"id": "T03", "name": "摘要", "pattern": "\\\\begin\\{abstract\\}|\\\\abstract\\s*\\{", "show": "abstract 环境", "severity": "warn", "hint": "学位论文要中英文摘要", "basis": "题面「模板适配：…必填项」"},
+        {"id": "T04", "name": "目录", "pattern": "\\\\tableofcontents|\\\\tableofcontents\\*", "show": "\\tableofcontents", "severity": "warn", "hint": "学位论文模板要求目录", "basis": "题面「模板适配：…必填项」"},
+        {"id": "T05", "name": "标题落版", "pattern": "\\\\maketitle|\\\\makecover", "show": "\\maketitle / \\makecover", "severity": "warn", "hint": "按模板要求补 \\maketitle 或 \\makecover", "basis": "题面「模板适配：…必填项」"}
+      ]
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "source_id": "tertiary",
+  "doi": "10.1000/example.tertiary",
+  "note": "示例材料：非真实论文。只用于演示增量更新（--append）时的新增、合并与冲突处置。",
+  "paragraphs": [
+    {
+      "paragraph_id": "JATS-P-0020",
+      "text": "We fine-tune RoBERTa on SST-2 and report F1 of 0.93 in our classification experiments."
+    },
+    {
+      "paragraph_id": "JATS-P-0021",
+      "text": "Devlin et al. reported that BERT outperforms the CNN baseline on SST-2."
+    },
+    {
+      "paragraph_id": "JATS-P-0022",
+      "text": "A graph neural network reranker is applied to the retrieval task on MS MARCO."
+    }
+  ]
+}

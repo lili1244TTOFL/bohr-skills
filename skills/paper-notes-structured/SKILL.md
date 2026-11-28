@@ -182,3 +182,12 @@ python -c "import json;r=json.load(open('output/result.json',encoding='utf-8'));
 | 留得住 | 五字段卡片；缺项显式 `not_reported`，不猜值 | `card`、`stats.card_filled` | 第 9 节第 2 条 | 完整 |
 | 找得回 | 每条带 `anchor`；N01 查块存在，N02 查数字回原文 | `evidence`、`knowledge[].anchor` | 第 9 节第 4 条 | 完整 |
 | 用得上 | `knowledge[].key` 去重条目可重跑、可比较 | `notes.md`、`notes.json` | 第 9 节第 1 条 | 部分：无索引、无查询 |
+
+## 检查码全表
+
+| 码 | 判据 |
+|-|-|
+| N06 | 见 `run.py` 实现与 `changes.md` 对应条目 |
+| N07 | 见 `run.py` 实现与 `changes.md` 对应条目 |
+| N08 | 见 `run.py` 实现与 `changes.md` 对应条目 |
+| N09 | 见 `run.py` 实现与 `changes.md` 对应条目 |
