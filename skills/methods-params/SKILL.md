@@ -41,7 +41,7 @@ python run.py --input /input --work /app/work --out /app/output
 python run.py --input examples/case --work work --out output --case-id demo
 ```
 
-退出码：0 正常（`status` 可能为 `partial`）；1 材料缺失（`blocked`，仍写 `result.json`）。
+退出码：0 正常（`status` 可能为 `partial`）；1 材料缺失（`blocked`，仍写 `result.json`，另写 `missing_input.md`）。
 
 ## 4 流程
 
@@ -50,7 +50,7 @@ python run.py --input examples/case --work work --out output --case-id demo
 | 0 | 模型（`prompts/inspect_materials.md`） | **先读材料，产出 `schema.json` 键清单**；不同论文键名差异大，按键猜必漏 |
 | 1 | `discover()` | 按扩展名与文件名判类型，分桶：配置 / 日志 / 代码 / 正文 / 说明 |
 | 2 | `extract()` | 按规则表逐行扫，命中即记 `file:line` 证据；同一 (名称,值) 只留首条 |
-| 3 | `extract_steps()` | 从代码的公开函数抽步骤；抽不到就交缺口清单 |
+| 3 | `extract_steps()` | 有代码时从公开函数抽步骤；只有日志/说明时从带时间的动作行抽（`file:line` 仍可回指）；都抽不到才交缺口 |
 | 4 | `align()` | 正文是否写到了？正文里出现但材料里没有的数值 → 标"无来源" |
 | 5 | `render()` | 按六类要素渲染章节，缺的写"待作者确认" |
 
@@ -62,21 +62,23 @@ python run.py --input examples/case --work work --out output --case-id demo
 
 | 要素 | 本 Skill | 落在哪 |
 |-|-|-|
-| 步骤 | 部分 | 从代码公开函数名抽；无注释时只能给到函数级，不做语义推断 |
+| 步骤 | 部分 | 优先从代码公开函数名抽；无代码时从日志/说明里的带时间动作行抽（`materials.md:8 10:00 start training`）；不做语义推断 |
 | 实验设置 | 做 | `RULES["实验设置"]`：硬件、软件版本、重复次数 |
 | 参数 | 做 | `RULES["参数"]`：学习率、批大小、轮数、种子、权重衰减 |
 | 数据集 | 做 | `RULES["数据集"]`：名称、版本、划分比例 |
-| 对照 | **不做** | 材料里没有基线对象与对照条件，一律写"待作者确认" |
-| 复现与限制 | 部分 | 给材料清单与缺口；限制条件需作者补 |
+| 对照 | **不做** | 基线对象与对照条件不抽，一律写"待作者确认"（材料里写了也一样，见 `gaps`） |
+| 复现与限制 | 部分 | 给材料清单与待补参数；限制条件需作者补；该节无条件渲染，因此计为已覆盖 |
 
-未覆盖或不完整的都会出现在 `gaps` 里，不静默略过。
+未覆盖或不完整的都会出现在 `gaps` 里，不静默略过。状态只由"能判却没判过"的项决定：
+正文数值对不上、正文漏写、可做要素（步骤/实验设置/参数/数据集）缺料 → `partial`；
+「对照」按 §5 本包不做，写在边界里，不单独压状态。
 
 ## 6 输出契约
 
 | 字段 | 含义 |
 |-|-|
 | `case_id` | 取自 `case.json`；缺失用输入目录名 |
-| `status` | `ok` / `partial` / `blocked` |
+| `status` | `success` / `partial` / `blocked`（`success`=主产物已出且无正文数值问题、可做要素齐全） |
 | `六要素覆盖` | 覆盖了哪几类、缺哪几类 |
 | `统计` | 材料文件数、抽取参数数、正文一致 / 未写 / 无来源数 |
 | `evidence` | 单位 `file:line`，每条参数指明来源 |
@@ -88,11 +90,12 @@ python run.py --input examples/case --work work --out output --case-id demo
 
 | 情况 | 行为 | 状态 |
 |-|-|-|
-| 找不到配置/日志/代码 | 写 `blocked` 的 `result.json` 并退出 1 | `blocked` |
+| 找不到配置/日志/代码 | 写 `blocked` 的 `result.json` + `missing_input.md`，退出 1 | `blocked` |
 | 配置缺字段 | 不补，进 `gaps` | `partial` |
-| 正文数值无来源 | 进 `uncertainty` + `gaps` | `partial` |
+| 正文数值无来源 | 进 `uncertainty` + `gaps`（日期与时刻等时间戳不算实验数值，已整体跳过） | `partial` |
+| 无正文（manuscript） | 跳过对齐，章节按材料落全部抽到的参数，`gaps` 记明"未做正文对齐" | `success` |
 | 正文有多份 | 全部读入拼接，不做版本裁定 | `partial`（gaps 注明） |
-| 代码无注释/无函数 | 步骤退化为空，进 `gaps` | `partial` |
+| 代码无注释/无函数 | 退到日志/说明的带时间动作行；两者都无则步骤为空，进 `gaps` | `partial` |
 
 ## 8 限制
 
@@ -103,9 +106,14 @@ python run.py --input examples/case --work work --out output --case-id demo
 
 ## 9 自查
 
+```bash
+python run.py --input examples/case --work work --out output
+# 期望 stdout：{"ok": true, "status": "success", "params": 8, "missing": 0, "unsourced": 0, "gaps": 2}
+```
+
 1. 每个参数都能在 `params.tsv` 里看到 `file:line`。
 2. `gaps` 覆盖三条：正文漏写、无来源数值、六要素缺失。
-3. `status` 为 `partial` 时，`gaps` 非空。
+3. `status` 为 `partial` 时，`gaps` 里必有"正文数值/正文未写/六要素缺"之一的实项。
 4. 章节里没有材料外的数字（`uncertainty` 为空才敢说没有）。
 5. 换一份材料重跑，六要素覆盖应随之变化，而不是恒定输出同一模板。
 
@@ -118,19 +126,19 @@ python run.py --input examples/case --work work --out output --case-id demo
 
 | 关注点 | 本 Skill 的机制 | 落在哪 |
 |-|-|-|
-| 写得全 | 六类要素逐项盘点：步骤、实验设置、参数、数据集与划分、对照、复现与限制 | `elements.json` 的六类计数与缺口 |
-| 写得准 | 参数值只从配置文件与日志取，取不到标 `unknown`，不从段落推 | `params.tsv` 的 `source` 列 |
-| 做得着 | 输出可执行步骤序列与复现清单（版本、命令、种子） | `methods.md` 步骤段 + `repro.md` |
+| 写得全 | 六类要素逐项盘点：步骤、实验设置、参数、数据集与划分、对照、复现与限制 | `result.json` 的 `六要素覆盖` 与 `gaps` |
+| 写得准 | 参数值只从配置与日志取，取不到不填，记进 `gaps`，不从段落推 | `params.tsv` 的证据列（文件:行） |
+| 做得着 | 输出可执行步骤序列与复现清单（版本、命令、种子） | `methods_section.md` 的步骤段与复现与限制段 |
 | 说得住 | 缺口与待确认项单列，限制条件指到具体失效场景 | `result.json` 的 `版本与边界`、`gaps` |
 
 `result.json` 顶层平铺目标产物、事实与来源映射、版本与边界三字段。
 
 ## 契约字段映射
 
-| 字段 | 产物 | 回显方式 |
+| 字段 | 回填内容 | 回显方式 |
 |-|-|-|
-| 目标产物 | `methods_section.md` | full：路径直填 |
-| 事实与来源映射 | `params.tsv` | full：每条参数带 `source`（文件:行） |
-| 版本与边界 | `result.json` 的 `gaps` 与 `uncertainty` | full：缺口逐条列出 |
+| 目标产物 | `methods_section.md` 的路径、字符数、行数、六节标题 | full：本次运行算出的值 |
+| 事实与来源映射 | 逐条 `{要素, 名称, 值, 来源（文件:行）}` | full：每条参数可回材料 |
+| 版本与边界 | `gaps`、无来源数值、六要素缺失 | full：缺口逐条列出 |
 
 `case.json` 给了 `output_contract` 时按它逐字段回显；没给时也照样输出这三项，内容取上表。不存在"契约没给就不回显"的情况。

@@ -1,4 +1,4 @@
-﻿version: 2.0.0
+version: 2.0.0
 entry: run.py
 install: 无需安装，Python 3.10+ 标准库
 source: 自制，语法依据 Python 官方 re/json/pathlib 文档
@@ -7,6 +7,7 @@ files:
   - run.py
   - SKILL.md
   - examples/call.md
-  - examples/paper.txt
-  - examples/glossary.md
-  - examples/targets.txt
+  - examples/case/paper.txt
+  - examples/case/glossary.md
+  - examples/case/targets.txt
+  - examples/plain/paper.txt

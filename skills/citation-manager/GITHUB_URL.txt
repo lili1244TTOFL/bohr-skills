@@ -1,1 +1,2 @@
-﻿https://github.com/<你的账号>/<仓库>/tree/main/skills/citation-manager
+﻿https://github.com/lili1244TTOFL/bohr-skills/tree/main/skills/citation-manager
+SKILL.md

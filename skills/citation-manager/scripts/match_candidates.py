@@ -54,18 +54,51 @@ def surname(author: str) -> str:
     return a.split()[-1].lower()
 
 
-def load_glossary(path: str | None) -> dict[str, list[str]]:
+def load_glossary(path: str | None, stats: dict | None = None) -> dict[str, list[str]]:
+    """读中英两列术语表，两种落盘形态都认：
+
+    - TSV：一行 `中文<TAB>英文`
+    - Markdown 表格：一行 `| 中文 | 英文 |`（rules/glossary_zh_en.md 就是这个形态）
+
+    解析到 0 条时把原因写进 stats（run.py 据此记 material_gaps），不静默返回空表。
+    """
     g: dict[str, list[str]] = {}
+    st = stats if stats is not None else {}
+    st.update({"path": str(path) if path else None, "n": 0, "rows": 0,
+               "format": None, "warning": None})
     if not path:
+        st["warning"] = "未给 --glossary，中英题名合并不生效"
         return g
     p = Path(path)
     if not p.exists():
-        return g
+        st["requested"] = str(p)
+        alt = next((x for x in (p.with_suffix(".md"), p.with_suffix(".tsv")) if x.exists()), None)
+        if alt is None:
+            st["warning"] = f"术语表不存在：{p}"
+            return g
+        p = alt
+    st["resolved"] = str(p)
     for line in p.read_text(encoding="utf-8-sig").splitlines():
-        if not line.strip() or "\t" not in line:
+        s = line.strip()
+        if not s or ("\t" not in s and "|" not in s):
             continue
-        zh, en = line.split("\t", 1)
-        g.setdefault(zh.strip(), []).append(en.strip().lower())
+        if s.startswith("|"):
+            cells = [c.strip() for c in s.strip().strip("|").split("|")]
+            if len(cells) < 2:
+                continue
+            zh, en, fmt = cells[0], cells[1], "markdown"
+        else:
+            zh, en = s.split("\t", 1)
+            zh, en, fmt = zh.strip(), en.strip(), "tsv"
+        if not zh or not en or set(zh + en) <= set("-: "):
+            continue          # 表头分隔行 `|-|-|`
+        g.setdefault(zh, []).append(en.lower())
+        st["rows"] += 1
+        st["format"] = fmt
+    st["n"] = len(g)
+    if not g:
+        st["warning"] = (f"术语表解析到 0 条：{p}"
+                         "（需要「中文<TAB>英文」或「| 中文 | 英文 |」两列）")
     return g
 
 
@@ -211,7 +244,8 @@ def main(argv: list[str] | None = None) -> int:
         e["keywords"] = e.get("keywords") or []
     by_id = {e["id"]: e for e in entries}
 
-    gloss = load_glossary(args.glossary)
+    gloss_stats: dict = {}
+    gloss = load_glossary(args.glossary, gloss_stats)
     rmap = refs_map(args.refs, entries)
 
     cite: list[tuple[str, str, str]] = []
@@ -262,7 +296,8 @@ def main(argv: list[str] | None = None) -> int:
                                         encoding="utf-8")
 
     print(json.dumps({"ok": True, "n_cite": len(rows), "n_no_cand": n_no,
-                      "n_mark": n_mark, "refs_mapped": len(rmap), "out": str(out)},
+                      "n_mark": n_mark, "refs_mapped": len(rmap),
+                      "glossary": gloss_stats, "out": str(out)},
                      ensure_ascii=False))
     return 0
 

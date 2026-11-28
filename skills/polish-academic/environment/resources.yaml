@@ -1,0 +1,13 @@
+version: 3.0.0
+entry: run.py
+install: 无需安装，Python 3.10+ 标准库
+source: 自制，语法依据 Python 官方 re/json/pathlib/argparse 文档
+conditions: 需要 Python 3.10+；输入为 UTF-8 文本；术语表用 Markdown 两列表
+files:
+  - run.py
+  - SKILL.md
+  - examples/call.md
+  - examples/paper.md
+  - examples/polished.md
+  - examples/polished_bad.md
+  - examples/glossary.md

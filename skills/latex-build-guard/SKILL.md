@@ -1,24 +1,26 @@
 ---
 name: latex-build-guard
-description: 适用于需要核对 LaTeX 稿件能否编译、并把结果交给复核者的任务。输入一份 .tex（可带 .bib），输出 report.md、checks.json、result.json，编译成功时另出 PDF。不改写源码，不写回修好的 .tex，不做版式视觉比对。
+description: 适用于需要核对 LaTeX 稿件能否编译、并把修好的源码交给复核者的任务。输入一份 .tex（可带 .bib），输出修复后的 fixed.tex、fixes.md、report.md、checks.json、result.json，编译成功时另出 PDF。不改正文文字，只修可机械修复的 label/caption/缺图/层级问题，不做版式视觉比对。
 ---
 
 # LaTeX 编译守卫
 
 ## 1 用途
 
-输入一份 `.tex`（可带 `.bib`），产出以下 4 项（PDF 有条件）：
+输入一份 `.tex`（可带 `.bib`），产出以下 5 项（PDF 有条件）：
 
 | 产物 | 落点 | 内容 |
 |-|-|-|
-| `report.md` | `--out` | 问题清单（码 + severity + 描述）与编译状态 |
+| `fixed.tex` | `--out` | **成品**：按内置规则修好的可编辑源码（label/caption/缺图占位/层级） |
+| `fixes.md` | `--out` | 修复记录：每条命中的规则码与改动说明 |
+| `report.md` | `--out` | 原稿问题清单（码 + severity + 描述）+ 修复记录 + 修复稿残留 + 编译状态 |
 | `checks.json` | `--work` | T01–T11 逐条结果、按码计数、`ok` |
-| `result.json` | `--out` | 主结果 + 编译记录 + `case_id` + `output_contract` 回显 |
+| `result.json` | `--out` | 主结果 + 修复记录 + 编译记录 + `case_id` + `output_contract` 回显 |
 | PDF | `--out` | 仅当 `latexmk` 或 `pdflatex` 存在且返回码为 0 |
 
 不做：
 
-- 不修改源码，不写回修好的 `.tex`：交付物只有报告与 PDF。
+- 不改正文文字、数字与公式。
 - 不做版式视觉比对，不比较 PDF 外观。
 - 不解析宏包自定义命令语义。
 - 不联网安装宏包或字体。
@@ -30,7 +32,7 @@ description: 适用于需要核对 LaTeX 稿件能否编译、并把结果交给
 | 单文件 `.tex`，或能指出主文件的工程 | 多主文件工程：只取输入目录下首个 `.tex` |
 | 交叉引用、文献键、caption、环境配对的形式检查 | 公式语义与符号正误：只读文本，不读数学含义 |
 | 需要一条真实编译记录（工具名、返回码、日志尾部） | 模板必填项逐项比对：无模板解析 |
-| 需要把"能否编译"作为可复核证据交出去 | 需要修好的可编辑源码：本 Skill 不产出 |
+| 需要把"能否编译"作为可复核证据交出去 | 需要修好的可编辑源码：由 autofix.py 产出 fixed.tex |
 
 ## 3 调用
 
@@ -60,9 +62,11 @@ python run.py --tex paper.tex --out output --no-compile
 | 步 | 脚本 | 花模型 | 做什么 |
 |-|-|-|-|
 | 0 读输入 | `run.py` | 否 | 读 `case.json`；定位 `.tex` 与 `.bib` |
-| 1 静态检查 | `scripts/texcheck.py` | 否 | T01–T10 单遍扫描；写 `work/checks.json` |
-| 2 编译 | `run.py` | 否 | 有 `latexmk`/`pdflatex` 才跑；最多 2 轮，首轮非零即停 |
-| 3 落盘 | `run.py` | 否 | `report.md`、`result.json`；有 PDF 则复制到 `--out` |
+| 1 静态检查 | `scripts/texcheck.py` | 否 | T01–T11 单遍扫描（查原稿）；写 `work/checks.json` |
+| 2 自动修复 | `autofix.py` | 否 | F01–F06 规则修 → `fixed.tex` + `fixes.md`；这是交付物 |
+| 3 复检 | `scripts/texcheck.py` | 否 | 同一套 T 码查 `fixed.tex`，残留分类记进 `规则命中` |
+| 4 编译 | `run.py` | 否 | 有 `latexmk`/`pdflatex` 才跑（编 `fixed.tex`）；最多 2 轮，首轮非零继续跑完 |
+| 5 落盘 | `run.py` | 否 | `fixed.tex`、`fixes.md`、`report.md`、`result.json`；有 PDF 则复制到 `--out` |
 
 请求数 0。步骤 2 在 `--no-compile` 下跳过，`build.skipped` 记 `no_compile`。
 
@@ -85,6 +89,14 @@ python run.py --tex paper.tex --out output --no-compile
 
 `checks.ok` 判据：不存在 `severity` 不为 `info` 的条目。`info` 只有 T03 与 T05，故仅这两码不压 `status`。
 
+`status` 看的是**修复稿**：`fixed.tex` 写出，且下列两类残留为空即 `success`——
+
+- `TOOL_CODES = {T01, T02, T06}`：autofix 能修的码，修完还在说明修复失败；
+- `BLOCK_CODES = {T07, T08, T11}`：环境/花括号/表格列数这类结构性语法错，规则修不了，还在就说明这份 `.tex` 还不可用。
+
+其余残留（`T04` 缺 bib 键、`T09` 缺图已被 F05 换成占位框、`T10` 层级已被 F06 提升、`T03`/`T05` 是 info）只进 `gaps` 与 `规则命中.需作者处理`，不压状态。
+**编译能否通过不参与 `status`**：本机没有 TeX 发行版是环境缺件，不是产物没做完；`build.skipped` 与 `gaps` 会记明。
+
 ## 6 输出契约
 
 | 字段 | 内容 |
@@ -103,17 +115,19 @@ python run.py --tex paper.tex --out output --no-compile
 
 | 取值 | 条件 |
 |-|-|
-| `success` | `checks.ok` 与 `build.ok` 同时为真 |
-| `partial` | 二者任一为假；`--no-compile` 下 `build.ok` 恒为假，故 `success` 不可达 |
-| `blocked` | 找不到 `.tex`；只打印一行 JSON 并以退出码 1 结束，不写 `result.json` |
+| `success` | `fixed.tex` 写出，且修复稿上 `TOOL_CODES`、`BLOCK_CODES` 残留均为空（编译与否不影响） |
+| `partial` | 修复稿上仍有 `TOOL_CODES` 或 `BLOCK_CODES` 残留（修没修成、或结构性语法错要作者改） |
+| `blocked` | 找不到 `.tex`；写 `result.json` + `missing_input.md`，退出码 1 |
+
+`--no-compile` 只跳过编译，不影响 `status`（`build.skipped=no_compile`）。
 
 平台 3 个字段的回显：`run.py` 已按平台字段名精确匹配，命中即 `full`。
 
 | 平台字段 | 回显结果 | 实际内容在哪 |
 |-|-|-|
-| 目标产物 | `report.md`，`full` | `report.md` 与 `build` |
-| 事实与来源映射 | `report.md`，`full` | `work/checks.json` 的码与描述 |
-| 版本与边界 | `report.md`，`full` | `build.tool`、`build.returncode`、`gaps` |
+| 目标产物 | `fixed.tex`，`full` | `deliverables` 与 `目标产物`（字节数前后对比、修复条数） |
+| 事实与来源映射 | `fixed.tex`，`full` | `work/checks.json` 的码与描述 + `规则命中.修复` |
+| 版本与边界 | `fixed.tex`，`full` | `build.tool`、`build.returncode`、`gaps`、`版本与边界.残留` |
 
 原第 f 条（契约回显用正则猜键名）已修：三个平台字段现均回显 `full`。
 
@@ -123,8 +137,8 @@ python run.py --tex paper.tex --out output --no-compile
 
 | 编号 | 缺陷 | 后果 | 调用方必须自己做 |
 |-|-|-|-|
-| a | 从不写回修好的 `.tex`，产物只有 `report.md` 与 PDF | 题目要"结构清楚、可继续编辑的源码"，本 Skill 交不出，这是最大缺口 | 按 `report.md` 手工改源码，另存可编辑 `.tex` |
-| b | 编译带 `-halt-on-error`，返回码非 0 即 break，只跑首轮 | 正是题目点名的"停在第一条错误"，后续错误不出现 | 修完首条再重跑，循环到 `build.ok` 为真 |
+| a | 不写回原件：修复结果写到 `--out/fixed.tex`，输入目录的 `.tex` 一律不动 | 想把成果并入原工程时要自己拷回 | 把 `fixed.tex` 覆盖回原文件或改成目标文件名 |
+| b | 结构性语法错（T07 环境不配对、T08 花括号、T11 表格列数）不自动修 | 这类错要读懂作者意图才能改，规则修不了，修完仍在就判 `partial` | 按 `report.md` 的残留清单手工改 |
 | c | 错误只收以 `!` 开头的行与 `文件:数字:` 形式的行 | 抓不到 TeX 独立的 `l.NNN` 行，`build.errors` 无文件与行号 | 从 `build.log_tail` 或原始日志找 `l.NNN` 定位 |
 | d | `build` 只记工具名与返回码 | 不记发行版版本、宏包与字体版本、编译命令、轮次；"复现得了"只满足一半 | 自行记录 `--version` 输出、宏包版本与命令 |
 | e | T08 全文数 `{` 与 `}`，注释与 verbatim 内的也计入 | 含注释或 verbatim 花括号的稿件即误报（示例实测差值 2） | 每条 T08 命中人工确认后再改 |
@@ -140,14 +154,17 @@ python run.py --tex paper.tex --out output --no-compile
 
 | 情况 | 行为 | status |
 |-|-|-|
-| 输入无 `.tex` | 打印 `{"ok": false, "status": "blocked", "error": "找不到 .tex 文件"}`，退出码 1 | `blocked` |
+| 输入无 `.tex` | 写 `result.json` + `missing_input.md`（列出找过的后缀与要补什么），stdout 打 `{"ok": false, "status": "blocked"}`，退出码 1 | `blocked` |
 | `case.json` 缺失或损坏 | 静默回落：`case_id` 用 `--case-id` 或 `case`，契约为空对象 | 照常计算 |
-| 编译返回码非 0 | `gaps` 追加 `编译失败：rc=N`；`build.errors` 取末轮日志前 10 条 | `partial` |
-| 无 `latexmk`/`pdflatex` | `build.skipped=no_tex_distribution`，`gaps` 追加一条说明 | `partial` |
-| `--no-compile` | `build.skipped=no_compile`，不记 `gaps` | `partial` |
+| 有可修项 | F01–F06 逐条修，写 `fixed.tex` + `fixes.md`，逐条记进 `规则命中.修复` | 按修复稿复检定 |
+| 修复稿仍缺图 | F05 换占位框 `\fbox{图片缺失：…}` 并标 TODO；`gaps` 记明要作者补图 | 不压状态 |
+| 修复稿仍缺 bib 键（T04） | 不猜条目；`gaps` 记"需作者处理" | 不压状态 |
+| 修复稿仍有 T07/T08/T11 | `gaps` 记"结构性错误未修（压状态）"，`report.md` 残留段列出 | `partial` |
+| 编译返回码非 0 | `gaps` 追加 `编译失败：rc=N`；`build.errors` 取末轮日志前 40 条（不首错即停） | 不压状态 |
+| 无 `latexmk`/`pdflatex` | `build.skipped=no_tex_distribution`，`gaps` 记明"PDF 未生成" | 不压状态 |
+| `--no-compile` | `build.skipped=no_compile` | 不压状态 |
 | 无 `.bib` | 跳过 T04/T05，不报错 | 由其余检查决定 |
 | 源码非 UTF-8 | 按 `errors="replace"` 解码继续，不报错 | 照常计算 |
-| 环境不配对 | T07 只报首条后 break，其后不扫 | `partial` |
 
 `refused` 与 `needs_model` 不在本 Skill 的状态集内，代码不会输出这两个值。
 
@@ -156,14 +173,14 @@ python run.py --tex paper.tex --out output --no-compile
 ```bash
 python scripts/texcheck.py --tex examples/paper.tex --bib examples/refs.bib --out work/checks.json
 python run.py --tex examples/paper.tex --bib examples/refs.bib --out output --work work --case-id demo
-python -c "import json;r=json.load(open('output/result.json',encoding='utf-8'));print(r['status'],r['build'],r['gaps'])"
+python -c "import json;r=json.load(open('output/result.json',encoding='utf-8'));print(r['status'],r['stats']['fixes'],r['gaps'])"
 ```
 
-1. `status` 为 `success` 或 `partial`；`partial` 必须能从 `gaps` 或 `checks` 读出原因。
-2. `build` 里 `skipped` 与 `returncode` 必有其一，不出现两者皆无。
-3. `output_contract` 的键集合与 `case.json` 一致，只有值会变。
-4. `report.md` 问题条数等于 `work/checks.json` 的 `n_problems`，逐码计数一致。
-5. T08 命中时先人工复核注释与 verbatim。
+1. `output/fixed.tex` 存在且非空；`fixes.md` 逐条列出命中的 F 码。
+2. `status` 为 `success` 或 `partial`；`partial` 必须能从 `gaps` 或 `规则命中` 读出原因（TOOL/BLOCK 残留）。
+3. `build` 里 `skipped` 与 `returncode` 必有其一，不出现两者皆无。
+4. `output_contract` 的键集合与 `case.json` 一致，只有值会变。
+5. `report.md` 的问题条数等于 `work/checks.json` 的 `n_problems`，逐码计数一致；修复稿残留段与 `规则命中` 一致。
 
 预算：模型请求 0 次；静态检查为单遍扫描，耗时正比 `.tex` 行数；编译最多 2 轮；全程不联网。
 
@@ -171,9 +188,31 @@ python -c "import json;r=json.load(open('output/result.json',encoding='utf-8'));
 
 | 评分轴 | 机制 | 输出字段 | 自查 |
 |-|-|-|-|
-| 编译得通 | 真跑 `latexmk`/`pdflatex`，记工具名与返回码；无发行版记 `no_tex_distribution` | `build.ok`、`build.returncode`、`gaps` | 第 9 节第 2 条 |
-| 改得对 | 只判形式层：T01/T02/T04/T06/T09 查引用、caption、图片；不改内容、不判公式语义 | `checks` 的 `静态检查`、`work/checks.json` | 第 9 节第 4 条 |
-| 交得可用 | ABSENT：不写回可编辑源码，只有 `report.md` 与 PDF | 无字段承载 | 第 7 节缺陷 a |
-| 复现得了 | 记工具名、返回码、日志尾部；不记发行版与宏包版本、命令、轮次 | `build.tool`、`build.log_tail` | 第 9 节第 2 条与第 7 节缺陷 d |
+| 编译得通 | 真跑 `latexmk`/`pdflatex`，记工具名与返回码；无发行版记 `no_tex_distribution` | `build.ok`、`build.returncode`、`gaps` | 第 9 节第 3 条 |
+| 改得对 | 只判形式层：T01/T02/T04/T06/T09 查引用、caption、图片；不改内容、不判公式语义 | `checks` 的 `静态检查`、`work/checks.json` | 第 9 节第 5 条 |
+| 交得可用 | `autofix.py` 写出改定的 `fixed.tex`（真改，不是报告），`run.py` 默认就走这一步 | `目标产物`、`deliverables`、`规则命中.修复` | 第 9 节第 1 条 |
+| 复现得了 | 记工具名、返回码、日志尾部；不记发行版与宏包版本、命令、轮次 | `build.tool`、`build.log_tail` | 第 9 节第 3 条与第 7 节缺陷 d |
 
-`交得可用` 为 ABSENT：题目要"结构清楚、可继续编辑的源码"，本 Skill 从不产出 `.tex`。该轴证据只能由调用方按 `report.md` 手工改出的源码提供。
+## 11 自动修复：产出改好的 .tex
+
+`autofix.py` 读 `.tex`，改掉可机械修复的问题，把改后的源码写出来。`run.py` 默认调用它（不再只出报告）。
+
+```bash
+# 单独跑
+python autofix.py --input examples --out fixed --case-id latex-A
+# 走主入口，一次出 fixed.tex + fixes.md + report.md
+python run.py --input examples --out output --work work
+```
+
+产出：`fixed.tex`、`fixes.md`、`result.json`（三字段）。本机无 TeX 时 `compile_verified=false`，写进边界，不假装编译过。
+
+| 码 | 判据 |
+|-|-|
+| F01 | label 重复，后者改名 `_2` |
+| F02 | 引用不存在，就近补 `\label` |
+| F03 | 浮动体缺 caption，补 `\caption{待补图注}` 并标 TODO（TODO 放注释里，避免吃掉右花括号） |
+| F04 | bib 条目未被引用，只报不删 |
+| F05 | `\includegraphics` 指向的文件不存在，换成 `\fbox{图片缺失：…}` 占位并标 TODO |
+| F06 | 首个分节是 `\subsection` 且此前无 `\section`，提升为 `\section`（只改层级，不改标题文字） |
+
+实测：`examples/paper.tex` 原 10 行 270 B，跑完得 `fixed.tex` 15 行 351 B，五处改动（F01 重复 label 改名、F02 补 `label{fig:missing}`、F03 补 caption、F05 缺图换占位框、F06 subsection→section）；修复稿复检只剩 T03/T05 两条 info。

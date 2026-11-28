@@ -1,10 +1,11 @@
-﻿version: 1.0.0
+version: 1.1.0
 install: 无需安装，纯标准库（Python 3.10+）
 entry: run.py
 source: 自制，语法依据 Python 官方文档 re/json/pathlib 模块
 conditions: 需要 Python 3.10 及以上；输入需为 UTF-8 文本；引用写法限 [@key] 与 \cite{key}
 files:
   - run.py
+  - compose.py
   - SKILL.md
   - examples/call.md
   - examples/draft.md

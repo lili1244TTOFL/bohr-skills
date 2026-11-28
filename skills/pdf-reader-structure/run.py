@@ -84,6 +84,51 @@ def build_sections(pages: list[dict]) -> list[dict]:
     return secs
 
 
+def docmeta(pages: list[dict]) -> dict:
+    """取文档级元数据：标题、作者、单位、摘要、关键词。
+
+    只用版面块的角色与顺序，不做语义猜测：标题取 role=title（字号 ≥ 正文 1.5 倍
+    的合并块），作者与单位取标题后两块，摘要取 Abstract/摘要 标题到下一个标题
+    之间的正文。取不到的字段留空串，不编造。
+    """
+    meta = {"title": "", "authors": "", "affiliation": "",
+            "abstract": "", "keywords": ""}
+    if not pages:
+        return meta
+    p1 = pages[0]
+    blocks = [b for b in p1["blocks"]
+              if b["role"] not in ("header", "footer", "page_number", "table")]
+    titles = [b["text"] for b in blocks if b["role"] == "title"]
+    if titles:
+        meta["title"] = " ".join(titles).strip()
+        idx = max(i for i, b in enumerate(blocks) if b["role"] == "title")
+        after = blocks[idx + 1: idx + 4]
+        if after:
+            meta["authors"] = after[0]["text"].strip()
+        for b in after[1:]:
+            t = b["text"].strip()
+            if (re.search(r"(?i)(university|institute|department|college|laborator|"
+                          r"大学|学院|研究所|实验室|@)", t)
+                    or re.search(r"\d{5,6}", t)):
+                meta["affiliation"] = t
+                break
+    for i, b in enumerate(blocks):
+        if (re.match(r"(?i)^(abstract|摘要)\b", b["text"].strip())
+                and b["role"] in ("heading", "body")):
+            buf = []
+            for c in blocks[i + 1:]:
+                if c["role"] in ("heading", "title"):
+                    break
+                buf.append(c["text"])
+            meta["abstract"] = " ".join(buf).strip()[:1200]
+            break
+    for b in blocks:
+        if re.match(r"(?i)^(keywords?|关键词)", b["text"].strip()):
+            meta["keywords"] = b["text"].strip()
+            break
+    return meta
+
+
 def to_markdown(pages: list[dict]) -> tuple[str, list[str]]:
     lines: list[str] = []
     gaps: list[str] = []
@@ -97,7 +142,9 @@ def to_markdown(pages: list[dict]) -> tuple[str, list[str]]:
             role = b["role"]
             if role in ("header", "footer", "page_number"):
                 continue
-            if role == "heading":
+            if role == "title":
+                lines.append("# " + b["text"] + "\n")
+            elif role == "heading":
                 lines.append("#" * min(int(b.get("level") or 3), 6) + " " + b["text"] + "\n")
             elif role == "table":
                 lines.append(b.get("markdown") or "") 
@@ -114,7 +161,9 @@ def to_markdown(pages: list[dict]) -> tuple[str, list[str]]:
 
 def write_result(out: Path, case_id: str, contract: dict, res: dict,
                  sections: list[dict], tables: list[dict], md_path: Path,
-                 gaps: list[str], stats: dict, checks: dict) -> Path:
+                 gaps: list[str], stats: dict, checks: dict,
+                 doc: dict, refs: list[str], blocks: list[dict],
+                 status: str) -> Path:
     def pointer(kind: str) -> dict:
         return {"kind": kind, "path": str(out / kind), "bytes": (out / kind).stat().st_size
                 if (out / kind).exists() else 0}
@@ -127,81 +176,110 @@ def write_result(out: Path, case_id: str, contract: dict, res: dict,
             deliverables.append({"kind": "table", "path": str(p), "bytes": p.stat().st_size,
                                  "table_no": t["no"], "n_rows": t["n_rows"],
                                  "n_cols": t["n_cols"]})
-    by_kind = {d["kind"]: d for d in deliverables}
-    echo, echo_status = {}, {}
+    measured = sum(1 for b in blocks if not b.get("bbox_est"))
+    estimated = sum(1 for b in blocks if b.get("bbox_est"))
+    # 契约字段装真实内容：解析出的标题/章节/表/公式/参考文献数与样本框，
+    # 不是文件名，也不是"见某文件"。
+    payload = {
+        "parsed": {"pages": res["n_pages"],
+                   "title": doc["title"], "authors": doc["authors"],
+                   "affiliation": doc["affiliation"],
+                   "abstract_chars": len(doc["abstract"]),
+                   "headings": [b["text"] for b in blocks if b["role"] == "heading"][:12],
+                   "tables": [{"page": t["page"], "n_rows": t["n_rows"],
+                               "n_cols": t["n_cols"]} for t in tables],
+                   "formulas": [{"page": b["page"], "no": b.get("formula_no"),
+                                 "text": b["text"]}
+                                for b in blocks if b["role"] == "formula"],
+                   "references": len(refs)},
+        "evidence": {"unit": "page+bbox",
+                     "measured_blocks": measured, "estimated_blocks": estimated,
+                     "sample": [{"page": b["page"], "role": b["role"],
+                                 "bbox": b["bbox"]} for b in blocks[:3]],
+                     "checks": checks, "gaps": gaps},
+        "status": {"status": status,
+                   "reason": gaps[0] if gaps else "全部页面解析成功，无 gap",
+                   "n_pages": res["n_pages"], "n_gaps": len(gaps)},
+        "goals": [{"kind": d["kind"], "bytes": d["bytes"]} for d in deliverables],
+        "map": {"sections": [{"title": s["title"], "level": s["level"], "page": s["page"]}
+                             for s in sections],
+                "references": refs[:8]},
+        "bounds": {"skill_version": "1.1.0", "gaps": gaps,
+                   "bbox_estimated_blocks": estimated},
+        "规则命中": {
+            "块角色": {r: sum(1 for b in blocks if b["role"] == r)
+                    for r in sorted({b["role"] for b in blocks})},
+            "栏数": [p.get("columns") for p in res.get("pages", [])],
+            "表格网格": [{"page": t["page"], "n_rows": t["n_rows"], "n_cols": t["n_cols"]}
+                     for t in tables],
+            "bbox": {"实测": measured, "推算": estimated},
+            "规则": "块角色按字号/字号比与位置判；表格按线框与行聚类；"
+                    "bbox 优先用字符坐标，段文本对不上时用推算框并标 bbox_est",
+        },
+    }
     rules = [
-        # 平台字段名精确匹配（先于模糊规则；改动见 review/ISSUES.md X-01）
-        (r"^阅读[/／]解析结果", "parsed.md"),
-        (r"^证据与边界", "blocks.json"),
-        (r"^运行状态", "status"),
-        (r"^目标产物", "parsed.md"),
-        (r"^事实与来源映射", "blocks.json"),
-        (r"^版本与边界", "sections.json"),
-        (r"text|markdown|正文|全文|parsed", "parsed.md"),
-        (r"(?<!re)table|表格", "table"),
-        (r"section|章节|结构|heading", "sections.json"),
-        (r"block|布局|layout|span", "blocks.json"),
+        # 平台字段名精确匹配（先于模糊规则）
+        (r"^阅读[/／]解析结果", "parsed", "full" if (doc["title"] or sections
+                                                   or tables or res["n_pages"]) else "partial"),
+        (r"^证据与边界", "evidence", "full" if measured else "partial"),
+        (r"^运行状态", "status", "full"),
+        (r"^目标产物", "goals", "full" if deliverables else "partial"),
+        (r"^事实与来源映射", "map", "full" if (sections or refs) else "partial"),
+        (r"^版本与边界", "bounds", "full"),
+        (r"text|markdown|正文|全文|parsed", "parsed",
+         "full" if res["n_pages"] else "partial"),
+        (r"(?<!re)table|表格", "tables", "full" if tables else "partial"),
+        (r"section|章节|结构|heading", "map", "full" if sections else "partial"),
+        (r"block|布局|layout|span", "evidence", "full" if measured else "partial"),
     ]
+    echo, echo_status = {}, {}
     for key in contract:
-        hit = None
-        for pat, kind in rules:
+        kind, st = "parsed", "partial"
+        for pat, k, s in rules:
             if re.search(pat, key, re.I):
-                hit = kind
+                kind, st = k, s
                 break
-        if hit == "table":
-            if tables:
-                echo[key] = [t["path"] for t in tables]
-                echo_status[key] = {"status": "full", "source": "table"}
-            else:
-                echo[key] = {"note": "本文未检出表格网格", "pointer": ["blocks.json"]}
-                echo_status[key] = {"status": "partial", "source": "pointer"}
-        elif hit == "parsed.md":
-            echo[key] = "parsed.md"
-            echo_status[key] = {"status": "full", "source": "parsed.md"}
-        elif hit == "sections.json":
-            echo[key] = "sections.json"
-            echo_status[key] = {"status": "full", "source": "sections.json"}
-        elif hit == "blocks.json":
-            echo[key] = "blocks.json"
-            echo_status[key] = {"status": "full", "source": "blocks.json"}
-        elif hit == "status":
-            echo[key] = {"status": "success" if res["ok"] and not gaps else "partial",
-                         "n_pages": res["n_pages"], "n_gaps": len(gaps)}
-            echo_status[key] = {"status": "full", "source": "result.json"}
+        if kind == "tables":
+            echo[key] = payload["parsed"]["tables"] if tables else \
+                {"note": "本文未检出表格网格", "count": 0}
         else:
-            echo[key] = {"note": "本字段无专门产出，见 parsed.md / blocks.json",
-                         "pointer": ["parsed.md", "blocks.json"]}
-            echo_status[key] = {"status": "partial", "source": "pointer"}
+            echo[key] = payload.get(kind) or {
+                "note": "本字段无专门产出", "parsed": payload["parsed"]}
+        echo_status[key] = {"status": st, "source": kind}
 
     result = {
         "output_contract_echo": echo_status,
         "case_id": case_id,
-        "status": "success" if res["ok"] and not gaps else "partial",
+        "status": status,
         "source": {"path": res["source"], "sha256": sha(Path(res["source"])),
                    "n_pages": res["n_pages"], "parsed_pages": res["pages_parsed"],
                    "encrypted": res["encrypted"]},
+        "docmeta": doc,
         "stats": stats,
         "sections": sections,
         "tables": [{k: t[k] for k in ("no", "page", "n_rows", "n_cols", "path")}
                    for t in tables],
         "formulas": [{"page": b["page"], "no": b.get("formula_no"), "text": b["text"],
                       "bbox": b["bbox"]}
-                     for p in res["pages"] for b in p["blocks"] if b["role"] == "formula"],
+                     for b in blocks if b["role"] == "formula"],
         "figures": [{"page": b["page"], "text": b["text"], "bbox": b["bbox"]}
-                    for p in res["pages"] for b in p["blocks"] if b["role"] == "caption"],
+                    for b in blocks if b["role"] == "caption"],
+        "references": [{"page": b["page"], "text": b["text"]}
+                       for b in blocks if b["role"] == "reference"],
         "deliverables": deliverables,
         "evidence": {"unit": "page+bbox", "blocks": "blocks.json",
-                     "note": "每个 block 带页码与 bbox，可直接回原文定位"},
+                     "note": "每个 block 带页码与 bbox：未标 bbox_est 的是 visitor_text "
+                             "实测坐标，标 bbox_est 的是段文本未能匹配字符块的推算框"},
         "gaps": gaps,
         "checks": checks,
+        "规则命中": payload["规则命中"],
         "output_contract": echo,
-
     }
+    result["阅读/解析结果"] = payload["parsed"]
+    result["证据与边界"] = payload["evidence"]
+    result["运行状态"] = payload["status"]
+    result.setdefault("uncertainty", list(gaps))
     p = out / "result.json"
-    result["阅读/解析结果"] = "parsed.md + blocks.json（分节、表格、公式、图表位置）"
-    result["证据与边界"] = "evidence 字段：page + bbox + 字符区间"
-    result["运行状态"] = result.get("status")
-    result.setdefault("uncertainty", list(result.get("gaps") or []))
     p.write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
     return p
 
@@ -243,13 +321,13 @@ def main(argv: list[str] | None = None) -> int:
         if not pdfs and args.pdf:
             pdfs = [Path(args.pdf)]
         if not pdfs:
-            # 失败也要留下契约载体：下游与评审靠 result.json 判断状态，不能只写 stdout。
+            # 失败也要留下契约载体与可读说明：不能只写 stdout。
             cid = case_id or (Path(args.input).name if args.input else "case")
             blocked = {
                 "case_id": cid,
                 "status": "blocked",
                 "error": "输入目录里没有 PDF",
-                "deliverables": [],
+                "deliverables": ["missing_input.md"],
                 "evidence": {"unit": "page+bbox", "note": "未解析，无证据"},
                 "checks": {},
                 "gaps": ["输入目录里没有 PDF"],
@@ -259,6 +337,15 @@ def main(argv: list[str] | None = None) -> int:
             }
             (out / "result.json").write_text(
                 json.dumps(blocked, ensure_ascii=False, indent=1), encoding="utf-8")
+            (out / "missing_input.md").write_text("\n".join([
+                "# 缺料说明：输入目录里没有 PDF", "",
+                f"- 输入目录：`{args.input}`" if args.input else "- 未给 `--input`，也没有 `--pdf`",
+                "- 找过：该目录（含子目录）下所有以 `%PDF-` 开头的文件",
+                "- 需要补：待解析的 PDF（需带文字层；扫描件无文字层，本 Skill 不内置 OCR）",
+                "- 缺什么才能出产物：没有 PDF 就没有页面与版面块，`parsed.md` / "
+                "`blocks.json` / `tables/` 无从生成",
+                "- 补齐后重跑：`python run.py --input <目录> --work <w> --out <o>`",
+            ]) + "\n", encoding="utf-8")
             print(json.dumps({"ok": False, "status": "blocked",
                               "error": "输入目录里没有 PDF",
                               "result": str(out / "result.json")}, ensure_ascii=False))
@@ -270,6 +357,26 @@ def main(argv: list[str] | None = None) -> int:
         if not args.pdf:
             ap.error("需要 --pdf 或 --input")
         pdf = Path(args.pdf)
+        if not pdf.exists():
+            # 指了路径但文件不在：走同一套缺料分支，不要抛栈
+            (out / "result.json").write_text(json.dumps(
+                {"case_id": case_id, "status": "blocked",
+                 "error": f"PDF 不存在：{pdf}", "deliverables": ["missing_input.md"],
+                 "gaps": [f"PDF 不存在：{pdf}"],
+                 "output_contract": {k: {"note": "未运行", "pointer": []} for k in contract},
+                 "output_contract_echo": {k: {"status": "partial", "source": "pointer"}
+                                          for k in contract}}, ensure_ascii=False, indent=1),
+                encoding="utf-8")
+            (out / "missing_input.md").write_text("\n".join([
+                "# 缺料说明：指定的 PDF 不存在", "",
+                f"- 指定路径：`{pdf}`",
+                "- 需要补：一份带文字层的 PDF；或把 PDF 放进 `--input` 目录后重跑",
+                "- 缺什么才能出产物：没有 PDF 就没有页面与版面块，`parsed.md` 无从生成",
+                "- 补齐后重跑：`python run.py --pdf <文件> --work <w> --out <o>`",
+            ]) + "\n", encoding="utf-8")
+            print(json.dumps({"ok": False, "status": "blocked", "error": f"PDF 不存在：{pdf}"},
+                             ensure_ascii=False))
+            return 1
 
     parser = load(Path(__file__).parent / "scripts" / "pdfparse.py")
     res = parser.parse(pdf)
@@ -279,6 +386,8 @@ def main(argv: list[str] | None = None) -> int:
     pages = res["pages"]
     blocks = [b for p in pages for b in p["blocks"]]
     sections = build_sections(pages)
+    doc = docmeta(pages)
+    refs = [b["text"] for b in blocks if b["role"] == "reference"]
     md, gaps = to_markdown(pages)
     (out / "parsed.md").write_text(md, encoding="utf-8")
 
@@ -302,17 +411,33 @@ def main(argv: list[str] | None = None) -> int:
             tdir.mkdir(parents=True, exist_ok=True)
             (out / tables[-1]["path"]).write_text(b["markdown"] + "\n", encoding="utf-8")
 
+    if res["n_pages"] == 0:
+        gaps.append("PDF 未解析出任何页面（页树为空或页面对象损坏）")
     if res["no_text_pages"]:
         gaps.append("无文字层页：" + ",".join(str(x) for x in res["no_text_pages"])
                     + "（需 OCR，本 Skill 未内置 OCR）")
     if res["encrypted"]:
         gaps.append("PDF 加密，已尝试空口令解密")
-    single = [p["page"] for p in pages if p.get("columns", 1) == 1 and p.get("n_lines", 0) >= 20]
-    if single:
-        gaps.append("以下页判为单栏，若原文为多栏则栏序未验证：" + ",".join(map(str, single[:8])))
+    # 只有"单栏且正文只占页宽 <60%"才提示栏序可能未验证；整宽单栏页不提示
+    narrow = []
+    for p in pages:
+        if p.get("columns", 1) != 1 or p.get("n_lines", 0) < 20:
+            continue
+        bs = [b for b in p["blocks"] if b.get("bbox")
+              and b["role"] in ("body", "heading", "title", "caption", "reference")]
+        if not bs:
+            continue
+        x0 = min(b["bbox"][0] for b in bs)
+        x1 = max(b["bbox"][2] for b in bs)
+        if (x1 - x0) < float(p.get("width", 595)) * 0.45:
+            narrow.append(p["page"])
+    if narrow:
+        gaps.append("以下页判为单栏且正文宽度不足页宽 45%，若原文为多栏则栏序未验证："
+                    + ",".join(map(str, narrow[:8])))
     cjk_chars = sum(len(CJK.findall(b.get("text") or "")) for b in blocks)
     if cjk_chars > 0:
-        gaps.append(f"中文页共 {cjk_chars} 字：标题行可能受字距影响，顺序需人工核对")
+        gaps.append(f"中文页共 {cjk_chars} 字：CJK 无词间空格，标题行分段以字距为准，"
+                    "标题层级需人工核对")
 
     body = [b for b in blocks if b["role"] == "body"]
     moji = sum(len(MOJI.findall(b["text"])) for b in body)
@@ -325,27 +450,57 @@ def main(argv: list[str] | None = None) -> int:
              "references": sum(1 for b in blocks if b["role"] == "reference"),
              "headers": sum(1 for b in blocks if b["role"] == "header"),
              "footers": sum(1 for b in blocks if b["role"] == "footer"),
+             "bbox_estimated": sum(1 for b in blocks if b.get("bbox_est")),
              "columns": [p["columns"] for p in pages],
              "chars": chars, "mojibake_ratio": round(moji / chars, 4),
              "elapsed_s": round(time.time() - t0, 2)}
     if stats["mojibake_ratio"] > 0.02:
         gaps.append(f"疑似缺字/乱码比例 {stats['mojibake_ratio']:.2%}，字体可能未嵌入")
 
+    hf = [b["text"] for b in blocks if b["role"] in ("header", "footer")]
+    leaked = [t for t in hf if t and t in md]
     checks = {
         "页覆盖": {"ok": res["pages_parsed"] == res["n_pages"],
                    "detail": f"{res['pages_parsed']}/{res['n_pages']}"},
         "表格列数一致": {"ok": all(len({len(r) for r in t["rows"]}) == 1 for t in tables),
                          "detail": [t["n_cols"] for t in tables]},
         "有正文": {"ok": len(body) > 0, "detail": len(body)},
-        "页眉页脚已剔除": {"ok": (stats["headers"] + stats["footers"]) > 0,
+        "页眉页脚已剔除": {"ok": (stats["headers"] + stats["footers"]) > 0 and not leaked,
                            "detail": f"header={stats['headers']} footer={stats['footers']}；"
+                                     f"parsed.md 残留={len(leaked)}；"
                                      "为 0 表示未检出（无页眉页脚或未识别），不等同于已剔除"},
     }
+
+    # 读不出的页要有一份可读清单：哪几页、为什么读不出、需要什么才能继续。
+    # 状态看交付物：只要有页解析出来且抽到了文字，parsed.md 就是真产物；
+    # 无文字层页、栏序未验证、CJK 提示这些都是版面边界，进 gaps 不压状态。
+    unread = ([{"page": p, "reason": "无文字层（扫描件/字体未嵌入），需 OCR"}
+               for p in res.get("no_text_pages") or []]
+              + ([{"page": 0, "reason": "整份 PDF 未解析出页面（页树为空或页面对象损坏）"}]
+                 if res["n_pages"] == 0 else []))
+    text_found = bool(body) or any(b["role"] in ("title", "heading", "table", "caption",
+                                                 "reference") for b in blocks)
+    status = ("success" if res["ok"] and res["pages_parsed"] > 0 and text_found
+              else "partial")
+    if unread or status != "success":
+        lines = ["# 读不出或读不全的页", "",
+                 f"- 源文件：`{pdf.name}`",
+                 f"- 页数 {res['n_pages']}，成功解析 {res['pages_parsed']} 页，"
+                 f"版面块 {len(blocks)} 个，正文块 {len(body)} 个", "",
+                 "| 页码 | 原因 |", "|-|-|"]
+        for u in unread:
+            lines.append(f"| {u['page'] if u['page'] else '（整份）'} | {u['reason']} |")
+        if not unread:
+            lines.append("| — | 页面都能解析，但没有抽到正文块 |")
+        lines += ["", "读不出的部分不做推测：`parsed.md` 只写真实抽到的文字，"
+                      "缺的部分按页留空并在此说明。"]
+        (out / "unreadable.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
     rp = write_result(out, case_id, contract, res, sections, tables, out / "parsed.md",
-                      gaps, stats, checks)
-    print(json.dumps({"ok": True, "status": "success" if not gaps else "partial",
+                      gaps, stats, checks, doc, refs, blocks, status)
+    print(json.dumps({"ok": True, "status": status,
                       "case_id": case_id, "result": str(rp),
-                      "tables": len(tables), "gaps": gaps,
+                      "tables": len(tables), "gaps": len(gaps),
                       "elapsed_s": stats["elapsed_s"]}, ensure_ascii=False))
     return 0
 

@@ -22,9 +22,16 @@ python run.py --docx /tmp/sample.docx --refs examples/refs.txt \
               --lib examples/lib/core.bib examples/lib/sample_refs.bib \
               --work /tmp/work --out /tmp/out --case-id demo \
               --no-model --pass1 examples/pass1_out.txt --match examples/pass3_match.txt
+
+# 什么模型输出都不给：两步各走内置规则替身，成品照出
+python run.py --docx /tmp/sample.docx --refs examples/refs.txt \
+              --lib examples/lib/core.bib examples/lib/sample_refs.bib \
+              --work /tmp/work --out /tmp/out --case-id demo
 ```
 
 ## 示意输出（示例）
+
+三条命令的 `status` 都是 `success`（差异只在 `规则命中`：第三条的句子分流与句—库匹配由内置规则完成）。
 
 `/tmp/out/result.json` 摘要：
 
@@ -33,7 +40,8 @@ python run.py --docx /tmp/sample.docx --refs examples/refs.txt \
  "numbering": {"mode": "first-appearance", "n_refs": 11},
  "checks": {"5 分流校验": {"ok": true}, "7 匹配校验": {"ok": true},
             "10 成品校验": {"ok": true}},
- "changes": {"n_ops": 14}}
+ "规则命中": {"pass1": {"规则": "章节 + 引用标记 + 线索词", "条数": 34},
+              "match": {"规则": "MARK 优先，其次候选分首位", "条数": 12}}}
 ```
 
 `/tmp/out/sample_cited.docx` 正文片段：
@@ -48,4 +56,4 @@ Smith 等[2] 对 1 200 名成年人进行了为期两周的追踪…
 2  smith2018    SMITH J, BROWN L. Sleep duration and cognitive performance in adults[J]. Sleep, 2018, 41(3): 1-12.
 ```
 
-以上为示例数据，不是平台固定案例的结果。
+内置替身的匹配可能与模型判断不同（例如首句可能选中语义分最高的另一条），`规则命中` 逐句留下「选了哪条、依据词是什么、置信度多少」，便于人工复核。以上为示例数据，不是平台固定案例的结果。

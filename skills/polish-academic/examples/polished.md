@@ -1,0 +1,1 @@
+﻿We did not observe any recovery in the large sample. To test the effect, many participants were assigned, and the results were clearly very significant. The data were collected in 2021 [2]. Fig. 2 shows the 15% decline.

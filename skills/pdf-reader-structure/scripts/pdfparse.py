@@ -268,19 +268,22 @@ def _layout_mod():
 
 
 def parse_layout_page(page, pno: int) -> dict:
-    """layout 模式正文 + 内容流表格网格。"""
+    """layout 模式正文 + 内容流表格网格。
+
+    表格网格先算：单元格文字既要从正文段里剔除（否则单元格起始列会被
+    聚成额外的栏），又要并进表格块，所以顺序不能反。
+    """
     lay = _layout_mod()
     tb = _tables_mod()
-    res = lay.parse_page_layout(page, pno)
     chunks, _, _ = page_chunks(page)
-    tables_out, cell_texts = [], set()
+    tables_out, cell_texts = [], []
     for g in tb.grids(page):
         in_chunks = [c for c in chunks if tb.inside(g, c["x"], c["y"])]
         tb.assign(g, in_chunks)
         for row in g["rows"]:
             for cell in row:
                 if cell["text"].strip():
-                    cell_texts.add(cell["text"].strip())
+                    cell_texts.append(cell["text"].strip())
         tables_out.append({"page": pno,
                            "bbox": [round(g["x0"], 1), round(g["y0"], 1),
                                     round(g["x1"], 1), round(g["y1"], 1)],
@@ -289,9 +292,7 @@ def parse_layout_page(page, pno: int) -> dict:
                            "n_rows": g["n_rows"], "n_cols": g["n_cols"],
                            "rows": [[c["text"] for c in row] for row in g["rows"]],
                            "markdown": tb.to_markdown(g)})
-    if cell_texts:
-        res["blocks"] = [b for b in res["blocks"]
-                         if not any(b["text"] and b["text"] in ct for ct in cell_texts)]
+    res = lay.parse_page_layout(page, pno, chunks, cell_texts)
     blocks = res["blocks"]
     for t in tables_out:
         idx = len(blocks)

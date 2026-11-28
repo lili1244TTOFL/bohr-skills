@@ -1,6 +1,6 @@
 ---
 name: citation-manager
-description: 适用于需要给中英文论文补引用、重排编号、合并重复文献或核对正文与文献表的场景：输入 docx/md 稿件加 BibTeX/RIS 文献库，输出带正常上标编号的可编辑稿与 GB/T 7714—2015 文献表。不做联网核验条目真伪。
+description: 适用于需要给中英文论文补引用、重排编号、合并重复文献或核对正文与文献表的场景：输入 docx/md 稿件加 BibTeX/RIS 文献库，输出带正常上标编号的可编辑稿与 GB/T 7714—2015 文献表。句子分流与句—库匹配无模型输出时用内置规则替身，照样出成品。不做联网核验条目真伪。
 ---
 
 # 引用管理
@@ -44,7 +44,9 @@ python run.py --docx manuscript.docx --refs refs.txt --lib library.bib \
               --pass1 work/pass1_out.txt --match work/pass3_match.txt
 ```
 
-本 Skill 有两步需要模型判断（句子分流、句—库匹配）。单一自主 Agent 按下面循环执行：
+`--lib` 可省：只给 `--refs` 时先落一个空库，第 2 步把稿件原有文献表并进去当库用（`gaps` 写明「库内 N 条均来自稿件文献表」）。术语表 `rules/glossary_zh_en.md` 解析到 0 条时同样记 `gaps`，不静默失效。
+
+本 Skill 有两步本来靠模型判断（句子分流、句—库匹配）。**不给模型输出也不会停**：两步都有内置规则替身，先把成品跑出来，`gaps` 记明哪一步是规则做的。要更高精度时再按下面循环交模型输出：
 
 ```text
 1. run.py --input /input                                 → 得到 work/pass1_input.txt
@@ -57,6 +59,13 @@ python run.py --docx manuscript.docx --refs refs.txt --lib library.bib \
 6. 第 2/4 步输出不合规时按校验报码重做，最多 3 轮
 ```
 
+内置替身（确定性，逐条记入 `result.json.规则命中`）：
+
+| 缺什么 | 替身怎么算 | 产物 |
+|-|-|-|
+| `--pass1` 句子分流 | 已有 `[n]` 标记→`CITE`；方法节→`OWN`（伦理资助→`STRUCT`）；结果节→`OWN`；他人研究线索→`CITE`；其余→`AMBIG` | `work/pass1_auto.txt` |
+| `--match` 句—库匹配 | 候选分排序：`MARK` 优先，其次首位语义分，0.30/0.18 分 `H`/`M`；无候选→`NONE` | `work/pass3_auto.txt` |
+
 ## 4 流程
 
 | 步 | 脚本 | 花模型 | 做什么 |
@@ -67,9 +76,9 @@ python run.py --docx manuscript.docx --refs refs.txt --lib library.bib \
 | 2b DOI 形态检查 | `doi_check.py` | 否 | 库 → `doi_status.json`（`--online` 才联网） |
 | 3 关键词 | `keywords.py` | 否 | 库 → 关键词、索引、查重候选 |
 | 4 分句编号 | `pass1_prep.py` | 否 | 正文 → `prep.json` + `pass1_input.txt` |
-| 5 句子分流 | `prompts/pass1_sentence_triage.md` | 是 | 编号句 → `uid\|类别\|理由码\|句首` |
+| 5 句子分流 | 内置规则（`prompts/pass1_sentence_triage.md` 可选） | 否 | 编号句 → `uid\|类别\|理由码\|句首`；无模型输出时走内置替身 |
 | 6 候选检索 | `match_candidates.py` | 否 | prep + 分流 + 库 → `match_input.tsv` |
-| 7 句—库匹配 | `prompts/pass3_match.md` | 是 | 句子 + 候选 + 库 → `uid\|编号\|置信度\|依据` |
+| 7 句—库匹配 | 内置规则（`prompts/pass3_match.md` 可选） | 否 | 句子 + 候选 + 库 → `uid\|编号\|置信度\|依据`；无模型输出时走内置替身 |
 | 8 编号重排 | `renumber.py` | 否 | 匹配表 + 库 + `orig_map` → `numbering.json` |
 | 9 写入 docx | `insert_refs.py` | 否 | 原稿 + numbering → `*_cited.docx` |
 | 9b 图表编号 | `captions.py` | 否 | `--renumber-captions` 时重排图表式编号 |
@@ -111,11 +120,12 @@ python run.py --docx manuscript.docx --refs refs.txt --lib library.bib \
 | 字段 | 含义 |
 |-|-|
 | `case_id` | 取自 `case.json`；缺失用目录名并记 `gaps` |
-| `status` | `success` / `partial` / `blocked` / `refused` |
+| `status` | `success`（成品写出且各分项检查过）/ `partial`（成品在但有缺口）/ `blocked`（缺稿件或缺必需步骤） |
 | `deliverables` | 产物路径 → 是否真实生成 |
 | `fact_source_map` | 数字、引用、关键论断 → 来源条目或原稿位置 |
-| `evidence`（并入 `fact_source_map`） | 单位 `line`：原稿段落号 + 行号；每条引用可回指原文 |
+| `evidence`（并入 `fact_source_map`） | 单位 `paragraph`：段落号 + 句内偏移 + uid；每条引用可回指原文 |
 | `version_boundary` | 改动差异、人工确认项、材料缺口 |
+| `规则命中` | 句子分流与句—库匹配用了哪条替身规则，逐句记类别/理由码/候选分 |
 | `checks` | 分项检查的 `ok` 与 `detail` |
 | `gaps` | 缺口清单，每条可执行 |
 | `output_contract` | 按字段名显式回显，不用关键词猜 |
@@ -148,7 +158,8 @@ python run.py --docx manuscript.docx --refs refs.txt --lib library.bib \
 
 | 情况 | 行为 | 状态 |
 |-|-|-|
-| 缺稿件或文献库 | 不开始，给出缺失项 | `blocked` |
+| 缺稿件 | 写 `result.json` + `missing_input.md`（列出找过的后缀与要补什么） | `blocked` |
+| 缺 `--pass1` / `--match` 模型输出 | 用内置规则替身（见 §3），成品照出，`gaps` 与 `规则命中` 记明 | `success`（各检查过） |
 | 缺稿件原有文献表 | 跳过并库只用库；无映射的标记记 `unmapped_markers` | `partial` |
 | 库内找不到对应条目 | 匹配给 `NONE`，文献表不新增，记 `dropped_ids` | `partial` |
 | 条目字段缺失 | 照常渲染，交给条目检查组报码，不猜值 | `partial` |
@@ -160,7 +171,7 @@ python run.py --docx manuscript.docx --refs refs.txt --lib library.bib \
 
 ```bash
 python run.py --input /input --work /app/work --out /app/output
-python scripts/check_pass3.py --match work/pass3_match.txt
+python scripts/check_pass3.py work/pass3_auto.txt --pass1 work/pass1_auto.txt --lib work/library_merged.json
 python scripts/check_gbt.py --refs output/refs_rendered.txt --json /tmp/gbt.json
 python scripts/check_refs.py --docx output/*_cited.docx --numbering work/numbering.json
 python -c "import json;r=json.load(open('output/result.json'));print(r['status'],r['checks'],r['gaps'])"
@@ -170,8 +181,9 @@ python -c "import json;r=json.load(open('output/result.json'));print(r['status']
 2. `check_refs.py` 退出码 0（编号连续、上标、列表升序、首现顺序）
 3. `report.json` 的 error 级条目为 0
 4. 抽查 3 条 `numbering.tsv`，「首现句」能在稿件里找到
+5. 不给 `--pass1`/`--match` 也跑一遍：必须真出 `*_cited.docx`，`status=success`，`规则命中` 有逐句记录
 
-预算：建库、切句、重排、校验为纯本地处理，无模型请求。模型请求固定 2 次（分流 + 匹配），重试按循环上限 3 轮，最坏 6 次，低于 64 次上限。50 页量级本地处理 < 10 s。
+预算：建库、切句、重排、校验、两次内置替身均为纯本地处理，无模型请求。要更高精度时再交两次模型请求（分流 + 匹配），重试按循环上限 3 轮，最坏 6 次，低于 64 次上限。50 页量级本地处理 < 10 s。
 
 ## 10 题目对齐
 
@@ -203,7 +215,7 @@ python -c "import json;r=json.load(open('output/result.json'));print(r['status']
 |-|-|-|
 | 挂得对 | 逐句判定是否需要来源，引用插到论断句而非段末 | `pass1` 分诊 → `report.json` 的句级位置 |
 | 编得顺 | 插入/删除/调序后重排编号，正文标记与文末列表同步 | `scripts/renumber.py`、`changelog.md` |
-| 收得净 | 中英文题名、预印本与正式版、多库导出按判据合并并给依据 | `scripts/dedupe`、合并依据写入 changelog |
+| 收得净 | 中英文题名、预印本与正式版、多库导出按判据合并并给依据 | `scripts/ingest_refs.py`、合并依据写入 changelog |
 | 对得上 | 条目真实性、元数据字段、正文论断与所引文献主题匹配 | `scripts/check_refs.py`、`pass3` 匹配结果 |
 
 ## 契约字段映射

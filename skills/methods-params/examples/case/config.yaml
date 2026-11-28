@@ -1,0 +1,8 @@
+﻿lr: 3e-4
+batch_size: 64
+epochs: 12
+seed: 42
+hardware: 4xA100
+dataset: PubMedQA
+version: 2.1
+split: 8:1:1

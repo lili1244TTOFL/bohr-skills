@@ -32,7 +32,7 @@ python run.py --input /input --work /app/work --out /app/output
 python run.py --input examples/case --work work --out output --case-id np-demo
 ```
 
-退出码：0 正常（`status` 可能为 `partial`）；1 材料缺失（`blocked`，仍写 `result.json`）。
+退出码：0 正常（`status` 可能为 `partial`）；1 材料缺失（`blocked`，仍写 `result.json` 与 `missing_input.md`）。
 
 ## 4 流程
 
@@ -40,50 +40,63 @@ python run.py --input examples/case --work work --out output --case-id np-demo
 |-|-|
 | 1 读材料 | 找 `manuscript*.md` 或任意 `.md/.txt`；读 `case.json` 取 paper/authors/year/doi |
 | 2 切句 | 按 `。！？；` 与换行切分，保留全文字符偏移 |
-| 3 判关系 | 命中 `rules/relations.md` 的关系词才成为断言 |
-| 4 拆主客 | 关系词之前作主体，之后到句末作客体 |
-| 5 绑证据 | 记 `line`、`char_start`、`char_end`，方法记作 `sentence-window` |
-| 6 导三份 | `nanopubs.json`、`assertions.tsv`、`result.json` |
+| 3 判关系 | 命中 `run.py` 的 `RELATIONS` 才成为断言；因果类优先，其余取句内最早命中 |
+| 3b 拆长句 | 命中关系但超过长度阈值的句子，先按「；，、and」分句切成 ≤阈值的块，逐块再判关系词；切不出仍标 `review` |
+| 4 拆主客 | 转述前缀（作者认为/结果显示/...）进 `attribution`；主体取关系词前并去掉话语标记与系动词；客体取关系词后 |
+| 5 绑证据 | 证据取「主体→客体」连续窗口，不取整句；记 `line`、`char_start`、`char_end`，方法记作 `attribution+subject-object-window` |
+| 6 导四份 | `nanopubs.json`、`assertions.tsv`、`unresolved.md`、`result.json` |
 
 ## 5 判定口径
 
 | 情形 | 判定 |
 |-|-|
-| 句子无关系词 | 不生成断言，计入 `skipped`，覆盖率随之下降 |
-| 断言超过 80 字 | 标 `review=断言过宽，需拆细`，置信度降为 medium |
-| 正文找不到 | `status=blocked`，写 `result.json` 后退出 1 |
+| 句子无关系词 | 不生成断言，计入 `skipped`，逐句写进 `unresolved.md`；覆盖率随之下降 |
+| 断言超过长度阈值（中文 80 字 / 英文 160 字） | 先按分句切分（步 3b）；切完仍超才标 `review=断言过宽，需拆细`，置信度降为 medium |
+| 正文找不到 | `status=blocked`，写 `result.json` 与 `missing_input.md` 后退出 1 |
 | 来源字段缺失 | 写 `unknown`，不编造，并进 `gaps` |
+| 同一句多个关系词 | 因果类优先，其余取句内最早命中；另记 `confidence_basis` |
+| 转述前缀 | 单独记 `attribution`，不并进 `subject` |
 
-`status` 取值：`success`（有断言且无过宽）、`partial`（有断言但有过宽或缺口）、`blocked`（无正文）。
+`status` 取值：`success`（有断言且无过宽）、`partial`（有断言但有过宽或缺口；或断言 0 条但有 `unresolved.md`）、`blocked`（无正文）。
+
+`coverage` = 成断言的**句子数** / 句子总数（一条长句切出多条断言时不会超过 1）。
 
 ## 6 输出契约
 
 | 字段 | 内容 |
 |-|-|
 | `case_id` | 取自 `case.json`，缺失时用输入目录名；写进 `result.json` 顶层 |
-| `阅读/解析结果` | 断言条数、文件名、覆盖率 |
-| `证据与边界` | 证据单位 `line+char_start+char_end`、待复核条数、缺口 |
-| `运行状态` | 同 `status` |
+| `阅读/解析结果` | 断言条数、覆盖率、逐条 `{id, subject, relation, object}` |
+| `证据与边界` | 逐条 `{quote, line, char_start, char_end}`、待复核条数、缺口 |
+| `运行状态` | `{status, reason, assertions, n_gaps}` |
+| `output_contract` | 三个平台字段装上面的真实内容；`output_contract_echo` 逐键记 `full`/`partial` |
 | `evidence.items` | 每条断言的 id 与三处位置 |
 | `uncertainty` | 与 `gaps` 相同，列需人工确认的项 |
+| `规则命中` | 关系词命中分布、切分记录（原句/切块数/规则）、未命中句子数 |
 
-`output_contract` 里的字段逐个回显到 `result.json` 顶层：认得的写实际内容，认不得的置 `null` 并记入 `gaps`，不猜。
+`nanopubs.json` 里另有 `unresolved`（未成断言的句子原文数组）与同一份 `规则命中`；`unresolved.md` 是人读版，逐句说明为什么没成断言。
+
+`case.json` 里 `output_contract` 的键逐个回显：认得的写真实内容，认不得的置 `null` 并记入 `gaps`，不猜。
+
+单条断言的字段：`id`、`identifier`（`np:` + 12 位哈希）、`assertion`、`subject`、`relation`、`object`、`attribution`、`confidence`、`confidence_basis`、`review`、`evidence`（`quote`/`line`/`char_start`/`char_end`/`method`）、`source`。七项齐全才进 `assertions`，缺项写 `gaps`。
 
 ## 7 限制
 
-- 关系词表只覆盖常见科研动词，换领域要改 `rules/relations.md`。
+- 关系词表只覆盖常见科研动词；`RELATIONS` 在 `run.py` 里，`rules/relations.md` 是人读副本，改词表要改代码并同步该文件。
 - 不做指代消解：主体若是"该结果""上述方法"，会照原文记下来，标为待确认。
-- 句子级证据，不做子句级切分；一条长句里的并列关系会被并成一条。
+- 证据是「主体→客体」窗口，不是子句级；长句切分只在过宽时发生，切完客体仍可能带上并列分句，需人工收窄。
+- 长句切分按「；，、and」找切点，不做句法分析；切完仍超阈值才标 `wide` 交人工。
 - 不判断断言的真假，只保证它可判断、可回指。
 
 ## 8 异常处理
 
 | 情况 | 行为 | 状态 |
 |-|-|-|
-| 无正文文件 | 写 blocked 的 result.json，退出 1 | `blocked` |
-| 正文无显式关系句 | 断言 0 条，`gaps` 说明 | `blocked` |
+| 无正文文件 | 写 `result.json` 与 `missing_input.md`，退出 1 | `blocked` |
+| 正文无显式关系句 | 断言 0 条，交 `unresolved.md` 逐句说明，`gaps` 记明 | `partial` |
 | `case.json` 缺来源字段 | 写 `unknown`，进 `gaps` | `partial` |
-| 断言过宽 | 标 `review`，`uncertainty` 列出 | `partial` |
+| 断言过宽（切分后仍超阈值） | 标 `review`，`uncertainty` 列出 | `partial` |
+| 过长句已切分 | 逐条记 `规则命中.切分`，`gaps` 记明多出几条 | 不压状态 |
 
 ## 9 自查与预算
 
@@ -94,8 +107,9 @@ python -c "import json;r=json.load(open('output/result.json'));print(r['运行�
 
 1. 每条断言的 `evidence.quote` 能在正文里按 `char_start/char_end` 截出。
 2. `assertions.tsv` 行数 = 断言数 + 1。
-3. `gaps` 与 `uncertainty` 一致。
+3. `gaps` 与 `uncertainty` 一致；`unresolved.md` 的未命中句数等于 `stats.skipped`。
 4. 换一篇正文重跑，覆盖率应随文本变化。
+5. 拿一段超长句（无分号、>80 字）跑一遍：应出现 `规则命中.切分`，`wide` 归零。
 
 预算：零模型请求，纯本地处理；单篇 10 KB 正文为毫秒级。
 
@@ -103,17 +117,17 @@ python -c "import json;r=json.load(open('output/result.json'));print(r['运行�
 
 | 关注点 | 机制 | 落在哪 |
 |-|-|-|
-| 拆得细 | 一句一断言，只承一个关系；超过 80 字标待拆细 | `assertions[].review` |
-| 对得上 | 每条带最小证据片段与行列区间 | `evidence.quote/line/char_start/char_end` |
+| 拆得细 | 一句一断言，只承一个关系；过宽先按分句切，切完仍超才标待拆细 | `assertions[].review`、`规则命中.切分` |
+| 对得上 | 证据取主体→客体窗口，另记转述前缀与置信度依据 | `evidence.quote`、`attribution`、`confidence_basis` |
 | 追得回 | 断言→证据→paper/authors/year/doi 链路 | `source` 字段 |
-| 读得懂 | JSON + TSV 双导出，字段固定 | `nanopubs.json`、`assertions.tsv` |
+| 读得懂 | JSON + TSV 双导出，字段固定；未成断言的句子另出 `unresolved.md` | `nanopubs.json`、`assertions.tsv`、`unresolved.md` |
 
 ## 契约字段映射（字段 → 产物 → 完整度）
 
 | 字段 | 产物 | 完整度 |
 |-|-|-|
-| 阅读/解析结果 | `nanopubs.json` 的 `assertions` 数组 | full：断言原文、主体、关系、客体 |
-| 证据与边界 | 每条断言的 `evidence`（quote + line + char 区间） | full：可回原文定位 |
-| 运行状态 | `result.json` 顶层 `status` | full：success / partial / blocked |
+| 阅读/解析结果 | `result.json` 的 `阅读/解析结果`：条数、覆盖率、逐条三元组 | full：来自本次运行的断言数组 |
+| 证据与边界 | `result.json` 的 `证据与边界`：逐条 quote 与字符区间、待复核数、gaps | full：每条 quote 可按区间截出 |
+| 运行状态 | `result.json` 的 `运行状态`：status + reason | full：success / partial / blocked |
 
-`case.json` 给了 `output_contract` 按其回显；没给也照样输出这三项。
+`case.json` 给了 `output_contract` 就逐键回显真实内容；没给时仍输出上面三项。

@@ -2,9 +2,9 @@
 # Bundled files are relative to this directory.
 skill: ../SKILL.md
 version: "1.0.0"
-install: 无需安装；依赖 Python 3.9+ 标准库与 python-docx
+install: 无需安装；纯文本输入只用 Python 3.9+ 标准库，解析 PDF 时需 pypdf（6.x）
 source: 随 Skill 附带，无外部下载
-conditions: 需可写工作目录；输入为 .docx 稿件、原文献表与 .bib 文献库；运行时不联网
+conditions: 需可写工作目录；输入为 PDF 或纯文本论文（.docx 按 UTF-8 文本读，不做真解析）；运行时不联网；无文字层的 PDF 页只记缺口
 resources:
   - ../examples/call.md
   - ../examples/card.example.json

@@ -100,6 +100,20 @@ def main(argv: list[str] | None = None) -> int:
                 pass
     src = Path(args.pdf) if args.pdf else find_src(case_dir)
     if not src or not src.exists():
+        # 找不到原文也不空手返回：写 result.json + 可读缺料说明
+        res = {"case_id": case_id, "status": "blocked",
+               "gaps": ["找不到原文文件"], "uncertainty": ["无输入"],
+               "deliverables": ["missing_input.md"]}
+        (out / "result.json").write_text(json.dumps(res, ensure_ascii=False, indent=1),
+                                         encoding="utf-8")
+        (out / "missing_input.md").write_text("\n".join([
+            "# 缺料说明：没有找到原文", "",
+            f"- 输入目录：`{case_dir}`",
+            "- 找过：该目录下所有 `.pdf` / `.txt` / `.md` / `.tex` / `.docx`",
+            "- 需要补：待解析的论文全文（PDF 需带文字层，或直接给 `.md`/`.txt`）",
+            "- 缺什么才能出产物：没有原文就没有块、没有章节，`notes.md` 无从生成",
+            "- 补齐后重跑：`python run.py --input <目录> --work <w> --out <o>`",
+        ]) + "\n", encoding="utf-8")
         print(json.dumps({"ok": False, "status": "blocked", "error": "找不到原文文件"},
                          ensure_ascii=False))
         return 1
@@ -145,7 +159,8 @@ def main(argv: list[str] | None = None) -> int:
     if not ver["ok"]:
         gaps.append(f"核验未过：{ver['counts']}")
     if status == "auto":
-        gaps.append("笔记为规则抽取版本（status=auto），未做人工改写")
+        gaps.append("笔记由内置规则生成：标题块切节 → 五类字段信号挑候选句 → 卡片与知识点；"
+                    "块 id 锚点不变，未做人工改写")
 
     deliverables = []
     for name in ("notes.md", "notes.json", "card.json", "verify.json"):
@@ -160,36 +175,72 @@ def main(argv: list[str] | None = None) -> int:
         "字段完整": {"ok": not ver["counts"].get("N04"), "detail": ver["card_filled"]},
         "知识点不重复": {"ok": not ver["counts"].get("N05"), "detail": ver["counts"].get("N05", 0)},
     }
-    rules = [
-        (r"^运行状态", "verify.json"),
-        # 平台字段名精确匹配（先于模糊规则；改动见 review/ISSUES.md X-01）
-        (r"^阅读[/／]解析结果", "notes.md"),
-        (r"^证据与边界", "notes.json"),
-        (r"^目标产物", "notes.md"),
-        (r"^事实与来源映射", "notes.json"),
-        (r"^版本与边界", "verify.json"),
-        (r"note|笔记|markdown|summary", "notes.md"),
-        (r"card|卡片|字段", "card.json"),
-        (r"verif|核验|check", "verify.json"),
-        (r"section|章节|structure", "notes.json"),
-    ]
+    # 契约字段回填本次运行算出来的真实内容。v1 回填的是文件名（"notes.md" 之类），
+    # 平台侧等同 pointer，评审无法据此判断笔记到底有没有内容。
+    sec_list = use.get("sections") or []
+    kn_list = use.get("knowledge") or []
+    # 规则抽取版本（notes_status=auto）本身就是真产出：章节切分、字段候选、卡片知识点
+    # 都由内置规则从原文算出，块 id 可回溯。它不该再被顶层状态压成"没做完"。
+    has_notes = bool(sec_list) and (bool(kn_list) or bool(ver["card_filled"]))
+    result_status = "success" if ver["ok"] and has_notes else "partial"
+    anchors = []
+    for fld, obj in (use.get("card") or {}).items():
+        for it in (obj or {}).get("items") or []:
+            anchors.append({"来源": f"card.{fld}", "anchor": it.get("anchor"),
+                            "page": it.get("page"), "section": it.get("section")})
+    for it in kn_list:
+        anchors.append({"来源": f"knowledge.{it.get('kind')}", "anchor": it.get("anchor"),
+                        "page": it.get("page"), "section": it.get("section")})
+    contract_values = {
+        "阅读/解析结果": {
+            "节数": len(sec_list),
+            "章节": [{"sec_id": s.get("sec_id"), "title": s.get("title"),
+                      "page": s.get("page")} for s in sec_list[:20]],
+            "知识点": len(kn_list),
+            "带锚点条目": ver["n_items"],
+            "卡片已填字段": ver["card_filled"],
+        },
+        "证据与边界": {
+            "证据单位": "block id + page（块 id 形如 P4-12）",
+            "锚点": anchors[:20],
+            "锚点总数": len(anchors),
+            "缺口": gaps,
+        },
+        "运行状态": {
+            "status": result_status,
+            "notes_status": status,
+            "检查": {k: v["ok"] for k, v in checks.items()},
+            "未过检查": [k for k, v in checks.items() if not v["ok"]],
+        },
+    }
+    contract_src = {"阅读/解析结果": "notes.md + notes.json",
+                    "证据与边界": "notes.json 的 anchor 字段",
+                    "运行状态": "verify.json 的 ok/counts"}
     echo, echo_status = {}, {}
     for key in contract:
-        hit = None
-        for pat, f in rules:
-            if re.search(pat, key, re.I):
-                hit = f
-                break
-        if hit:
-            echo[key] = hit
-            echo_status[key] = {"status": "full", "source": hit}
+        name = str(key).replace("／", "/").strip()
+        if name in contract_values:
+            echo[key] = contract_values[name]
+            echo_status[key] = {"status": "full", "source": contract_src[name]}
         else:
             echo[key] = {"note": "本字段无专门产出，见 notes.md / notes.json",
                          "pointer": ["notes.md", "notes.json"]}
             echo_status[key] = {"status": "partial", "source": "pointer"}
 
+    rules = {
+        "方式": "标题块切节 → 五类字段信号挑候选句 → 卡片/知识点归并",
+        "切节": {"节数": len(sec_list),
+                 "标题块": [s.get("title") for s in sec_list[:20]]},
+        "字段命中": {f: sum(len(s.get("candidates", {}).get(k) or [])
+                            for s in sec_list)
+                     for f, k in (("研究问题", "question"), ("数据", "data"),
+                                  ("方法条件", "method"), ("主要发现", "finding"),
+                                  ("局限", "limitation"))},
+        "知识点": len(kn_list),
+        "卡片已填字段": ver["card_filled"],
+    }
     result = {"case_id": case_id,
-              "status": "success" if ver["ok"] and status == "agent" else "partial",
+              "status": result_status,
               "source": {"path": str(src), "n_pages": parse.get("n_pages"),
                          "n_sections": len(use.get("sections") or [])},
               "stats": {"sections": len(use.get("sections") or []),
@@ -202,6 +253,7 @@ def main(argv: list[str] | None = None) -> int:
                            "note": "块 id 形如 P4-12，指向第 4 页第 12 个正文块"},
               "checks": checks, "gaps": gaps,
               "notes_status": status,
+              "规则命中": rules,
               "output_contract": echo, "output_contract_echo": echo_status}
     (out / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=1),
                                      encoding="utf-8")

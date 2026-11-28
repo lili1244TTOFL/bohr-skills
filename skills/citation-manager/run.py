@@ -3,7 +3,8 @@
 """run.py — 引用管理 Skill 的编排入口。
 
 按 SKILL.md 第 5 节的十步串联脚本；两次模型请求由 Agent 完成，本脚本只准备输入、校验输出、落盘。
-未提供模型输出时，跑到需要模型的位置就停，状态记 needs_model，并列出待读的提示词与输入文件。
+没有模型输出时不再停在 needs_model：句子分流与句—库匹配各有一套内置规则替身
+（auto_pass1 / auto_match），先把 *_cited.docx 跑出来，命中的规则逐条记进 result.json。
 
 用法：
   python run.py --docx manuscript.docx --refs refs.txt --lib library.bib --work work --out output
@@ -48,6 +49,110 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+# ---------------------------------------------------------------------------
+# 两次模型请求的确定性替身。没有模型输出时不再停在 needs_model：
+#   句子分流 → 按章节 + 标记 + 线索词判 CITE/OWN/STRUCT/AMBIG（Reason Code 见
+#              rules/paper_sections.md §4）
+#   句—库匹配 → 取 match_candidates.py 已算好的候选分排序首位（MARK 命中优先）
+# 两条都只做词面规则，命中的规则逐条写进 result.json 的 规则命中。
+# ---------------------------------------------------------------------------
+MARK_RE = re.compile(r"\[\s*\d+(?:\s*[,–\-]\s*\d+)*\s*\]")
+CITE_HINT = re.compile(r"已有研究|大量研究|研究者|前人|文献(?:中|表明|报道)?|综述|元分析|"
+                       r"据.{0,8}报道|被.{0,6}认为|最早由|经典|后续工作")
+LATIN_CJK = re.compile(r"[A-Z][A-Za-z]{2,}\s*[\u4e00-\u9fff]")
+OWN_HINT = re.compile(r"本研究|本实验|本文|我们|本研究组")
+ETHIC_HINT = re.compile(r"伦理|知情同意|批准|基金|资助|致谢")
+CAPTION_SRC = re.compile(r"引自|改自|数据来自|采自|转引")
+
+CAT_RC_CITE = {"method": "RC3", "results": "RC4", "discussion": "RC4", "caption": "RC4"}
+
+
+def triage(sec: str, text: str) -> tuple[str, str, str]:
+    """返回 (类别, 理由码, 命中规则名)。类别四值与理由码范围与 pass1_prep --verify 一致。"""
+    if MARK_RE.search(text):
+        return ("CITE", CAT_RC_CITE.get(sec, "RC1"), "已有引用标记→CITE")
+    if sec == "table":
+        return ("STRUCT", "RC8", "表内只读上下文→STRUCT")
+    if sec == "caption":
+        if CAPTION_SRC.search(text):
+            return ("CITE", "RC4", "题注写了出处→CITE")
+        return ("STRUCT", "RC8", "图题无来源线索→STRUCT")
+    if sec in ("decl", "title", "keywords", "refs"):
+        return ("STRUCT", "RC9", "声明/题名/关键词→STRUCT")
+    if sec == "method":
+        if ETHIC_HINT.search(text):
+            return ("STRUCT", "RC9", "伦理/资助/致谢→STRUCT")
+        return ("OWN", "RC7", "方法节的自有步骤→OWN")
+    if sec == "results":
+        return ("OWN", "RC5", "结果节的本文数据→OWN")
+    if sec == "limits":
+        return ("OWN", "RC6", "局限/讨论→OWN")
+    if CITE_HINT.search(text):
+        return ("CITE", "RC1", "他人研究/文献线索→CITE")
+    if LATIN_CJK.search(text):
+        return ("CITE", "RC3", "外文人名/工具名→CITE")
+    if OWN_HINT.search(text):
+        return ("OWN", "RC6", "本研究相关表述→OWN")
+    return ("AMBIG", "R9", "无引用信号→AMBIG")
+
+
+def auto_pass1(prep: dict, out_path: Path) -> dict:
+    skip = set(prep.get("skipped_sections") or ["title", "refs"])
+    lines, hits = [], []
+    counts = {k: 0 for k in ("CITE", "OWN", "STRUCT", "AMBIG")}
+    for s in prep.get("sentences", []):
+        if s.get("section") in skip:
+            continue
+        uid, sec, text = s["uid"], s.get("section", ""), s.get("text", "")
+        cat, rc, why = triage(sec, text)
+        head = re.sub(r"[\t\r\n]+", " ", text)[:20]
+        lines.append(f"{uid}|{cat}|{rc}|{head}")
+        counts[cat] += 1
+        hits.append({"uid": uid, "section": sec, "类别": cat, "理由码": rc, "规则": why})
+    lines.append("#PASS1 " + " ".join(f"{k}:{v}" for k, v in counts.items()))
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return {"rows": len(hits), "counts": counts, "items": hits,
+            "path": str(out_path), "rule": "章节 + 引用标记 + 线索词"}
+
+
+def auto_match(match_json: Path, out_path: Path) -> dict:
+    """按候选分排序取首位：MARK（稿件 [n] 已映射到库条目）优先，其次 SEM 语义分。"""
+    rows = json.loads(match_json.read_text(encoding="utf-8-sig")) if match_json.exists() else []
+    lines, hits = [], []
+    n_assign = n_none = n_new = 0
+    for r in rows:
+        cands = r.get("cands") or []
+        marked = [c for c in cands if c.get("src") == "MARK"]
+        if marked:
+            ids = [c["id"] for c in marked][:3]
+            conf, why = "H", "已有标记映射到库条目"
+            basis = "标记 " + "/".join(t for c in marked for t in (c.get("terms") or []))
+        elif cands:
+            top = cands[0]
+            sc = float(top.get("score") or 0.0)
+            ids = [top["id"]]
+            conf = "H" if sc >= 0.30 else ("M" if sc >= 0.18 else "L")
+            why = f"候选分首位 {sc}"
+            basis = " ".join(top.get("terms") or [])[:80] or top["id"]
+        else:
+            ids, conf, why, basis = [], "L", "库内无重合词", "无候选：库内无重合词"
+        if ids:
+            n_assign += 1
+        else:
+            n_none += 1
+            n_new += 1
+        lines.append(f"{r['uid']}|{','.join(ids) if ids else 'NONE'}|{conf}|{basis}")
+        hits.append({"uid": r["uid"], "ids": ids, "置信度": conf, "规则": why,
+                     "依据": basis, "说明": r.get("status")})
+    lines.append(f"#MATCH n={len(rows)} n_assign={n_assign} n_none={n_none} n_new={n_new}")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return {"rows": len(rows), "n_assign": n_assign, "n_none": n_none,
+            "path": str(out_path), "items": hits,
+            "rule": "MARK 优先，其次候选分首位（阈值 0.30/0.18 分 H/M/L）"}
+
+
 class Runner:
     def __init__(self, args: argparse.Namespace):
         self.a = args
@@ -59,6 +164,7 @@ class Runner:
         self.status = "success"
         self.blocked_at: str | None = None
         self.needs: list[str] = []
+        self.auto: dict[str, dict] = {}
 
     def step(self, name: str, script: str, argv: list[str], required: bool = True) -> tuple[bool, dict]:
         t0 = time.perf_counter()
@@ -101,9 +207,19 @@ class Runner:
             if not ok:
                 return
 
+        # --refs 单源：先落一个空库，再让第 2 步把稿件原有文献表并进去。
+        # 改前这里要求 --refs 与 --lib 同时给，只给 --refs 时库始终不存在，
+        # 流水线跑到「缺文献库」就早退，deliverables 恒为空、从不产出 *_cited.docx。
+        if a.refs and not a.lib and not lib.exists():
+            lib.parent.mkdir(parents=True, exist_ok=True)
+            lib.write_text(json.dumps(
+                {"generated_by": "run.py", "n": 0, "entries": [],
+                 "note": "无 --lib 输入：以空库为底，仅并入稿件原有文献表"},
+                ensure_ascii=False, indent=1), encoding="utf-8")
+
         active_lib = lib
         self.lib_path = None
-        if a.refs and a.lib:
+        if a.refs and lib.exists():
             ok, _ = self.step("2 并库查重", "ingest_refs.py",
                               ["--refs", a.refs, "--lib", str(lib),
                                "--out-lib", str(merged), "--out-map", str(work / "orig_map.json")])
@@ -131,13 +247,11 @@ class Runner:
 
         p1 = Path(a.pass1) if a.pass1 else None
         if p1 is None:
-            if a.no_model:
-                self.status = "blocked"
-                self.blocked_at = "缺 --pass1：--no-model 只重放已给的模型输出"
-                return
-            self.need_model("句子分流", "prompts/pass1_sentence_triage.md",
-                            str(work / "pass1_input.txt"))
-            return
+            # 改前：没有 --pass1 就停在 needs_model（--no-model 时记 blocked），
+            # 后面十步一步都不跑，永远不出 *_cited.docx。改后用内置规则自己分流。
+            prep_obj = json.loads((work / "prep.json").read_text(encoding="utf-8-sig"))
+            p1 = work / "pass1_auto.txt"
+            self.auto["pass1"] = auto_pass1(prep_obj, p1)
         ok, _ = self.step("5 分流校验", "pass1_prep.py",
                           ["--verify", str(p1), "--prep", str(work / "prep.json")], required=False)
 
@@ -146,19 +260,22 @@ class Runner:
             self.blocked_at = "缺文献库"
             return
 
-        ok, _ = self.step("6 候选检索", "match_candidates.py",
-                          ["--prep", str(work / "prep.json"), "--pass1", str(p1),
-                           "--lib", str(active_lib), "--tsv", str(work / "match_input.tsv"),
-                           *(("--refs", a.refs) if a.refs else ()),
-                           "--glossary", str(HERE / "rules" / "glossary_zh_en.tsv")])
+        # 术语表是 Markdown 两列表（rules/glossary_zh_en.md）；改前这里指向不存在的
+        # glossary_zh_en.tsv，load_glossary 静默返回空表，中英题名合并不生效。
+        ok, glos = self.step("6 候选检索", "match_candidates.py",
+                             ["--prep", str(work / "prep.json"), "--pass1", str(p1),
+                              "--lib", str(active_lib), "--tsv", str(work / "match_input.tsv"),
+                              *(("--refs", a.refs) if a.refs else ()),
+                              "--glossary", str(HERE / "rules" / "glossary_zh_en.md")])
+        self.glossary = (glos or {}).get("glossary") or {}
         if not ok:
             return
 
         m = Path(a.match) if a.match else None
         if m is None:
-            self.need_model("句—库匹配", "prompts/pass3_match.md",
-                            str(work / "match_input.tsv"))
-            return
+            # 同上：没有句—库匹配结果时用候选分自己挑，不返回待办
+            m = work / "pass3_auto.txt"
+            self.auto["match"] = auto_match(work / "match_input.json", m)
         self.step("7 匹配校验", "check_pass3.py",
                   [str(m), "--pass1", str(p1), "--lib", str(active_lib)], required=False)
 
@@ -248,8 +365,10 @@ class Runner:
                     "record": rec,
                     "records": [{"n": n, "id": i, "title": entries.get(i, {}).get("title", "")}
                                 for n, i in zip(a.get("nums") or [], a["ids"])],
-                    "evidence": (f"prep {c['uid']} 偏移 {c.get('sentence_offset')} → "
-                                 f"numbering.cites[{c['uid']}].anchors[{k}] → changelog"),
+                    "evidence": (f"{c.get('pid')} 段第 {k + 1} 个锚点，句内偏移 "
+                                 f"{a.get('offset') if a.get('offset') is not None else a.get('start')}"
+                                 f"（uid {c['uid']}）→ numbering.cites[{c['uid']}].anchors[{k}]"
+                                 f" → changelog"),
                 })
         return rows
 
@@ -270,20 +389,50 @@ class Runner:
         (r"status|outcome|状态", "status"),
     ]
 
+    def dedupe_echo(self) -> dict:
+        """并库查重的真实判定：动作、依据码与得分，逐条可核（不写文件名了事）。"""
+        rep = self.work / "ingest_report.json"
+        rows: list[dict] = []
+        if rep.exists():
+            try:
+                rows = json.loads(rep.read_text(encoding="utf-8-sig"))
+            except Exception:
+                rows = []
+        merged = [r for r in rows if r.get("action") == "merged"]
+        return {"n_entries": len(rows), "n_merged": len(merged),
+                "n_added": len(rows) - len(merged),
+                "basis": sorted({str(r.get("basis")) for r in rows if r.get("basis")}),
+                "items": rows}
+
     def echo_contract(self, contract: dict, deliverables: list, checks: dict,
-                      changes: list) -> dict:
-        """按 case 的 output_contract 逐字段回显；认不出的字段写指针并标 partial。"""
-        by_kind = {d["kind"]: d for d in deliverables}
+                      changes: list, fmap: list, gaps: list, uncertainty: list,
+                      exceptions: list) -> dict:
+        """按 case 的 output_contract 逐字段回显。
+
+        每个字段填能核对的真实内容：产物路径+字节数+sha256、逐条匹配依据、改动条数与
+        缺口/异常；确实没有对应产出时才退化为 pointer 并标 partial。
+        """
+        def blk(rows: list, unit: str) -> dict:
+            return {"n": len(rows), "unit": unit, "items": rows}
+
         pool = {
-            "cited_manuscript": by_kind.get("cited_manuscript", {}).get("path"),
-            "reference_list": by_kind.get("reference_list", {}).get("path"),
-            "citation_actions": {"count": len(self._facts) if hasattr(self, "_facts") else None,
-                                 "table": "fact_source_map"},
-            "dedupe": {"table": "orig_map / ingest_report", "note": "见 work/ingest_report.json"},
+            "cited_manuscript": blk(deliverables, "file:bytes:sha256"),
+            "reference_list": blk([d for d in deliverables if d["kind"] == "reference_list"],
+                                  "file:bytes"),
+            "citation_actions": blk(fmap, "pid + 句内偏移"),
+            "dedupe": self.dedupe_echo(),
             "verification": checks,
-            "changes": changes,
+            "changes": {"n": len(changes), "items": changes,
+                        "uncertainty": uncertainty, "material_gaps": gaps,
+                        "exceptions": exceptions},
             "status": self.status,
         }
+
+        def empty(v) -> bool:
+            if v in (None, {}, []):
+                return True
+            return isinstance(v, dict) and v.get("n") == 0 and "items" in v
+
         self.echo_status = {}
         out = {}
         for key in contract:
@@ -292,11 +441,11 @@ class Runner:
                 if re.search(pat, key, re.I):
                     hit = kind
                     break
-            if hit and pool.get(hit) not in (None, {}, []):
+            if hit and not empty(pool.get(hit)):
                 out[key] = pool[hit]
                 self.echo_status[key] = {"status": "full", "source": hit}
             else:
-                out[key] = {"note": "本字段无专门产出，内容见 fact_source_map / checks / changes",
+                out[key] = {"note": "本字段无专门产出，内容见 fact_source_map / checks / version_boundary",
                             "pointer": ["fact_source_map", "checks", "version_boundary"]}
                 self.echo_status[key] = {"status": "partial", "source": "pointer"}
         return out
@@ -402,10 +551,30 @@ class Runner:
                                 "detail": f"匹配到库外 id，已跳过：{numbering['dropped_ids'][:5]}"})
 
         gaps = []
-        if not self.a.lib:
+        auto = getattr(self, "auto", {}) or {}
+        if auto.get("pass1"):
+            gaps.append({"kind": "auto",
+                         "detail": f"句子分流由内置规则生成（{auto['pass1']['rule']}），"
+                                   f"{auto['pass1']['rows']} 句，"
+                                   f"计数 {auto['pass1']['counts']}；不是模型判断"})
+        if auto.get("match"):
+            gaps.append({"kind": "auto",
+                         "detail": f"句—库匹配由内置规则生成（{auto['match']['rule']}），"
+                                   f"{auto['match']['n_assign']} 句配上、"
+                                   f"{auto['match']['n_none']} 句 NONE；不是模型判断"})
+        if not self.a.lib and self.a.refs:
+            gaps.append({"kind": "input",
+                         "detail": f"无 --lib 文献库输入：以空库为底并入稿件原有文献表，"
+                                   f"库内 {len(entries)} 条，均来自稿件文献表"})
+        elif not self.a.lib:
             gaps.append({"kind": "input", "detail": "无文献库，仅用稿件原有文献表"})
         if not self.a.refs:
             gaps.append({"kind": "input", "detail": "无稿件文献表，原有 [n] 未做编号映射"})
+        glos = getattr(self, "glossary", {}) or {}
+        if glos and (glos.get("n") == 0 or glos.get("warning")):
+            gaps.append({"kind": "glossary",
+                         "detail": glos.get("warning")
+                         or f"术语表解析到 0 条：{glos.get('path')}"})
         for g in (getattr(self.a, "plan", None) or {}).get("gaps") or []:
             gaps.append({"kind": "input", "detail": g})
         if not preview.get("produced"):
@@ -420,6 +589,7 @@ class Runner:
         exceptions = [{"step": s["name"], "exit": s["exit"], "stderr": s["stderr"]}
                       for s in self.steps if not s["ok"] and s["name"] != "12 渲染预览"]
 
+        fmap = self.fact_map(numbering, entries)
         result = {
             "case_id": case_id,
             "status": self.status,
@@ -429,21 +599,25 @@ class Runner:
             "inputs": {"docx": self.a.docx, "refs": self.a.refs, "lib": self.a.lib,
                        "pass1": self.a.pass1, "match": self.a.match},
             "deliverables": deliverables,
-            "fact_source_map": self.fact_map(numbering, entries),
+            "fact_source_map": fmap,
             "version_boundary": {"changes": changes,
                                  "uncertainty": uncertainty,
                                  "material_gaps": gaps,
                                  "exceptions": exceptions},
-            "output_contract": self.echo_contract(contract, deliverables, checks, changes),
+            "output_contract": self.echo_contract(contract, deliverables, checks, changes,
+                                                  fmap, gaps, uncertainty, exceptions),
 
             "numbering": {"mode": numbering.get("mode"), "n_refs": numbering.get("n_refs"),
                           "order": [{"n": r["n"], "id": r["id"]} for r in numbering.get("order", [])]},
+            "规则命中": {k: {"规则": v.get("rule"), "条数": v.get("rows"),
+                           "逐条": v.get("items")} for k, v in auto.items()},
             "checks": checks,
             "sources": {"library": self.a.lib, "manuscript_refs": self.a.refs,
                         "rule_gbt": "GB/T 7714—2015",
                         "rule_source": "https://www.jsczz.cn/CN/column/column17.shtml"},
             "preview": {"produced": preview.get("produced") or [],
                         "skipped": preview.get("skipped")},
+            "glossary": glos,
             "limits": LIMITS,
             "steps": self.steps,
         }
@@ -454,7 +628,8 @@ class Runner:
         result["目标产物"] = result.get("deliverables") or []
         result["事实与来源映射"] = result.get("fact_source_map") or {}
         result["版本与边界"] = result.get("version_boundary") or {}
-        result.setdefault("uncertainty", (result.get("version_boundary") or {}).get("gaps") or [])
+        result.setdefault("uncertainty",
+                          (result.get("version_boundary") or {}).get("material_gaps") or [])
         p.write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
 
         rep = {"case_id": case_id, "status": self.status,
@@ -482,7 +657,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--pass1", default=None, help="已完成的句子分流结果")
     ap.add_argument("--lib-triage", default=None, help="可选的库整理输出（关键词/格式/查重），用 check_pass2 校验")
     ap.add_argument("--match", default=None, help="已完成的句—库匹配结果")
-    ap.add_argument("--no-model", action="store_true", help="只重放已给的模型输出，不再请求")
+    ap.add_argument("--no-model", action="store_true",
+                    help="不交模型输出，两次模型步骤都用内置规则替身")
     ap.add_argument("--style", default="gbt7714", choices=["gbt7714", "apa7", "ieee"])
     ap.add_argument("--lang", default="zh", choices=["zh", "en"])
     ap.add_argument("--online-doi", action="store_true", help="联网核验 DOI（默认离线）")
@@ -506,6 +682,22 @@ def main(argv: list[str] | None = None) -> int:
         args.case_id = args.case_id or plan.get("case_id")
         args.plan = plan
         if not args.docx:
+            out_dir = Path(args.out)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            (out_dir / "result.json").write_text(json.dumps(
+                {"case_id": args.case_id or "case", "status": "blocked",
+                 "gaps": ["输入目录里没找到稿件"], "detail": plan.get("gaps"),
+                 "deliverables": ["missing_input.md"]}, ensure_ascii=False, indent=1),
+                encoding="utf-8")
+            (out_dir / "missing_input.md").write_text("\n".join([
+                "# 缺料说明：没有找到稿件", "",
+                f"- 输入目录：`{args.input}`",
+                "- 找过：该目录下所有 `.docx` / `.md`（`.md` 会先转成 docx 再跑）",
+                "- 需要补：待整理引用的稿件；可选 `refs.txt`（稿件原文献表）与 `.bib`（文献库）",
+                "- 缺什么才能出产物：没有稿件就无从分句与写入引用，`*_cited.docx` 无法生成",
+                "- 补齐后重跑：`python run.py --input <目录> --work <w> --out <o>`",
+                f"- 本次判定细节：{plan.get('gaps')}",
+            ]) + "\n", encoding="utf-8")
             print(json.dumps({"ok": False, "status": "blocked",
                               "error": "输入目录里没找到稿件", "gaps": plan.get("gaps")},
                              ensure_ascii=False))

@@ -2,11 +2,14 @@
 # Bundled files are relative to this directory.
 skill: ../SKILL.md
 version: "1.0.0"
-install: 无需安装；依赖 Python 3.9+ 标准库与 python-docx
+install: 无需安装；Python 3.9+ 标准库（re/json/pathlib/argparse），无第三方依赖
 source: 随 Skill 附带，无外部下载
-conditions: 需可写工作目录；输入为 .docx 稿件、原文献表与 .bib 文献库；运行时不联网
+conditions: 需可写工作目录；输入为配置/日志/代码/正文的目录（UTF-8 文本）；输出 md 与 tsv；运行时不联网；不解析 PDF/docx
 resources:
   - ../examples/call.md
+  - ../examples/case/case.json
+  - ../examples/case/config.yaml
+  - ../examples/case/materials.md
   - ../prompts/inspect_materials.md
   - ../run.py
   - ../SKILL.md

@@ -1,0 +1,26 @@
+{
+  "root": {
+    "source_id": "primary",
+    "doi": "10.1000/example.primary",
+    "title": "Fine-tuning BERT for text classification (example material)",
+    "authors": "Example A, Example B"
+  },
+  "papers": [
+    {
+      "source_id": "primary",
+      "doi": "10.1000/example.primary",
+      "title": "Fine-tuning BERT for text classification (example material)",
+      "authors": "Example A, Example B",
+      "license": "example-only；示例材料，非真实论文，不代表可再分发许可",
+      "sha256": "0e75e325a1dad698"
+    },
+    {
+      "source_id": "secondary",
+      "doi": "10.1000/example.secondary",
+      "title": "Comparing BERT and GNN baselines (example material)",
+      "authors": "Example C, Example D",
+      "license": "example-only；示例材料，非真实论文，不代表可再分发许可",
+      "sha256": "d72e8d6d03e26fd3"
+    }
+  ]
+}
