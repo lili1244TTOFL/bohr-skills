@@ -538,6 +538,39 @@ def main(argv=None) -> int:
             echo_status[key] = {"status": "partial", "source": "pointer"}
     result["output_contract"] = echo
     result["output_contract_echo"] = echo_status
+
+    # 引用一致性审计（X01 一稿两用 / X02 悬空指向）与分组判断工作单。
+    # 两者都在结果里显形：评审只看 result.json 也能核到。
+    try:
+        import importlib.util as _ilu
+        _here = Path(__file__).resolve().parent
+        def _load(name):
+            _sp = _ilu.spec_from_file_location(name, _here / "scripts" / f"{name}.py")
+            _m = _ilu.module_from_spec(_sp)
+            _sp.loader.exec_module(_m)
+            return _m
+        for _src in (Path(root) / "draft.md", Path(root) / "paper.md"):
+            if _src.exists():
+                _ca = _load("cite_audit")
+                _audit = _ca.audit(_src.read_text(encoding="utf-8-sig", errors="replace"))
+                result["引用一致性"] = {"X01": _audit["n_x01"], "X02": _audit["n_x02"],
+                                  "checks": _audit["checks"]}
+                if _audit["n_x01"] or _audit["n_x02"]:
+                    gaps.append(f"引用一致性：一稿两用 {_audit['n_x01']} 处、"
+                                f"悬空指向 {_audit['n_x02']} 处，见 result.json 引用一致性")
+                _gw = _load("group_worklist")
+                _wl = _gw.build(_src.read_text(encoding="utf-8-sig", errors="replace"))
+                result["分组工作单"] = {
+                    "n": _wl["n"], "how": _wl["how"],
+                    "verify_after_fill": _wl["verify_after_fill"],
+                    "items": _wl["items"],
+                    "filled_by": None,
+                    "note": "judgment 字段由调用方模型填；填完由 cite_audit 核引用键真实存在"}
+                break
+    except Exception as _ex:
+        gaps.append(f"引用一致性审计未完成：{type(_ex).__name__}")
+
+
     for k, v in echo.items():
         result.setdefault(k, v)
     (out / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=1),

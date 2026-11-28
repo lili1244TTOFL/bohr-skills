@@ -144,6 +144,10 @@ RULES = [
 
 DEP_FILES = ("requirements.txt", "environment.yml", "environment.yaml", "pyproject.toml", "pipfile")
 
+# 题面与元数据不是材料：task.md 里的 64/900/16384 是平台预算，case.json 只用于
+# case_id 与 output_contract，都不能进抽取桶或正文桶。
+SKIP_FILES = {"task.md", "case.json"}
+
 # 中文"键：值"写法：README/材料说明里最常见的形态，逐键映射到六要素
 CN_KEYS = [
     ("代码版本", "复现", "代码版本", "代码"),
@@ -215,6 +219,8 @@ def discover(root: Path) -> dict[str, list[Path]]:
     buckets: dict[str, list[Path]] = {}
     for p in sorted(root.rglob("*")):
         if not p.is_file() or p.name.startswith("."):
+            continue
+        if p.name.lower() in SKIP_FILES:
             continue
         if p.resolve() == Path(__file__).resolve():
             continue

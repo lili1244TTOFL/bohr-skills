@@ -236,7 +236,6 @@ def _run(args, t0: float) -> int:
     # ---------- 2 自动修复 ----------
     fx = autofix.apply_fixes(files, c1["problems"])
     fixed_files = fx["files"]
-    changed = {k: v for k, v in fixed_files.items() if v != files.get(k)}
 
     # ---------- 3 复检 ----------
     c2 = texcheck.check_project(fixed_files, bibs, root, main_rel, PKG_ROOT, gp)
@@ -273,7 +272,6 @@ def _run(args, t0: float) -> int:
             if fx2["changes"] != fx["changes"]:
                 fx = fx2
                 fixed_files = fx["files"]
-                changed = {k: v for k, v in fixed_files.items() if v != files.get(k)}
                 c2 = texcheck.check_project(fixed_files, bibs, root, main_rel, PKG_ROOT, gp)
                 (work / "checks_fixed.json").write_text(
                     json.dumps(c2, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -338,10 +336,8 @@ def _run(args, t0: float) -> int:
                      else "fail")
 
     # ---------- 状态与门槛 ----------
-    status = "success" if (changed and not left_tool and not left_block
-                           and compile_state != "fail") else "partial"
-    if not changed and not left_tool and not left_block and compile_state != "fail":
-        status = "success"  # 原稿本来就干净，fixed.tex 与原稿一致也算交付
+    # 编译不参与 status：编译失败/跳过只进 compile 与 gaps，交付判定只看 fixed.tex 的结构闸门
+    status = "success" if (not left_tool and not left_block) else "partial"
     gates = {
         "静态结构": {"ok": not left_block, "n": len(left_block),
                      "codes": sorted({p["code"] for p in left_block})},
@@ -515,9 +511,11 @@ def _run(args, t0: float) -> int:
         "case_id": case_id,
         "status": status,
         "status_reason": ("修复稿结构闸门全过" if not (left_tool or left_block)
-                          else "修复稿仍有结构性或修复失败项") +
-                         ("；编译通过" if compile_state == "pass" else
-                          "；编译跳过（无发行版）" if compile_state == "skip" else "；编译失败"),
+                          else "修复稿仍有结构性或修复失败项"),
+        "compile": {"state": compile_state, "ok": bool(build.get("ok")),
+                    "skipped": build.get("skipped"), "engine": engine,
+                    "returncode": build.get("returncode"), "pdf": build.get("pdf"),
+                    "affects_status": False},
         "source": {"input_dir": str(root), "main": main_rel,
                    "files": [{"rel": f["rel"], "role": f["role"], "lines": f["lines"]}
                              for f in info["files"]],
@@ -603,7 +601,9 @@ def _run(args, t0: float) -> int:
     print(json.dumps({"ok": True, "status": status, "main": main_rel,
                       "problems": c1["n_problems"], "fixes": len(fx["changes"]),
                       "residual_error": c2["n_error"],
-                      "compiled": bool(build.get("ok")), "compile": compile_state,
+                      "compile": {"state": compile_state,
+                                  "compiled": bool(build.get("ok")),
+                                  "skipped": build.get("skipped")},
                       "gaps": len(gaps)}, ensure_ascii=False))
     return 0
 

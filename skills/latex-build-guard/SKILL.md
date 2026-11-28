@@ -95,14 +95,15 @@ python run.py --tex paper.tex --out output --no-compile
 - `BLOCK_CODES = {T07, T08, T11}`：环境/花括号/表格列数这类结构性语法错，规则修不了，还在就说明这份 `.tex` 还不可用。
 
 其余残留（`T04` 缺 bib 键、`T09` 缺图已被 F05 换成占位框、`T10` 层级已被 F06 提升、`T03`/`T05` 是 info）只进 `gaps` 与 `规则命中.需作者处理`，不压状态。
-**编译能否通过不参与 `status`**：本机没有 TeX 发行版是环境缺件，不是产物没做完；`build.skipped` 与 `gaps` 会记明。
+**编译能否通过不参与 `status`**：本机没有 TeX 发行版是环境缺件，不是产物没做完；`build.skipped` 与 `gaps` 会记明。`result.json` 把编译状态单列在顶层 `compile`（`state` / `ok` / `skipped` / `returncode` / `pdf`），与 `status` 并列但明确 `affects_status=false`，不进入 `status` 计算；本机无 TeX 时改后的 `fixed.tex` 仍是可用交付，所以编译跳过时 `status` 仍可为 `success`。
 
 ## 6 输出契约
 
 | 字段 | 内容 |
 |-|-|
 | `case_id` | 取 `case.json` 的 `case_id` 或 `id`；缺则用 `--case-id`，再缺用 `case` |
-| `status` | `success` / `partial` / `blocked`，无其他取值 |
+| `status` | `success` / `partial` / `blocked`，无其他取值；只看修复稿结构闸门，编译不参与 |
+| `compile` | 编译状态单列：`state`（`pass`/`skip`/`fail`）、`ok`、`skipped`、`engine`、`returncode`、`pdf`、`affects_status=false`；与 `status` 分开读 |
 | `build` | `ok`、`tool`、`returncode`、`errors`、`pdf`、`log_tail`；未跑时多一个 `skipped` |
 | `evidence` | 单位 `file:line`：静态检查每条带行号；编译错误带 `build.log` 行号 |
 | `checks` | `静态检查`（`ok` + 按码计数）与 `编译`（`ok` + `skipped` 或 `returncode`） |
@@ -204,7 +205,7 @@ python autofix.py --input examples --out fixed --case-id latex-A
 python run.py --input examples --out output --work work
 ```
 
-产出：`fixed.tex`、`fixes.md`、`result.json`（三字段）。本机无 TeX 时 `compile_verified=false`，写进边界，不假装编译过。
+产出：`fixed.tex`、`fixes.md`、`result.json`（三字段）。本机无 TeX 时 `compile.ok=false`、`compile.state=skip`，写进边界，不假装编译过。
 
 | 码 | 判据 |
 |-|-|
@@ -233,3 +234,23 @@ python run.py --input examples --out output --work work
 
 脚本：`scripts/build.py`（编译，失败时收集全部错误）、`scripts/project.py`（工程扫描）、`rules/templates.json`（模板必填项）。
 模板必填项与编译证据落到 `report.md` 与 `result.json`。
+
+## 值不值得看，看这两个文件
+
+| 想知道的 | 看哪 |
+|-|-|
+| 与现成工具比，边界在哪、做不到什么 | `docs/对比与边界.md` |
+| 每条结论的出处 | `result.json` 里带出处的那几个字段，见上面的输出契约表 |
+
+## 判断层：哪些交给调用方模型
+
+脚本准备候选与锚点，判断由调用方模型做，脚本再核结果。本节说明本包的判断项。
+
+| 判断项 | 口径 |
+|-|-|
+| 这处报错属于哪类根因 | label 冲突/引用缺失/宏缺包/模板必填项/图片缺失 |
+| 这处该怎么改 | 六类确定性补丁之外的结构改动 |
+
+脚本跑检查、给带行号的缺陷清单；模型判根因并给改法；脚本应用补丁并重编译核验。
+
+判断结果写进 `result.json` 的 `判断层` 字段：每条含 `item`（判断项）、`value`（结论）、`basis`（依据，必须是原句子串）、`filled_by`（模型名或 caller）。未填写的项标 `pending`，不自行补结论。

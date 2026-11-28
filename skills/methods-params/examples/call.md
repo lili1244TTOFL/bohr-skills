@@ -23,13 +23,10 @@ python run.py --input examples/case --work work --out output
 上面这条命令的真实 stdout：
 
 ```json
-{"ok": true, "status": "success", "params": 8, "missing": 0, "unsourced": 0, "gaps": 2}
+{"ok": true, "status": "success", "items": 34, "params": 6, "steps": 3, "refs": {"步骤": 3, "实验设置": 7, "参数": 6, "数据集": 11, "对照": 6, "复现与限制": 6}, "missing": 0, "unsourced": 0, "conflicts": 0, "gaps": 1, "questions": 0}
 ```
 
 产物：`methods_section.md`（六节：步骤 / 实验设置 / 参数 / 数据集 / 对照 / 复现与限制）、
-`params.tsv`（8 条，每条带 `config.yaml:行`）、`result.json`（含三字段与 `六要素覆盖`）。
+`params.tsv`（34 条，每条带 `config.yaml:行` 或 `materials.md:行`）、`result.json`（含三字段与 `六要素覆盖`）。
 
-`status=success` 的依据：材料抽取到 8 条带来源的参数，五个可做要素（步骤 / 实验设置 /
-参数 / 数据集 / 复现与限制）都已落位；两条 `gaps` 是边界说明——本次没给正文（没有对齐可做）、
-「对照」按 SKILL.md §5 本包不抽。日志时间戳不再被误判成"无来源数值"。实际数值随材料而变，
-此处仅为接口示意，不是组织方固定案例结果。
+`status=success` 的依据：材料抽取到 34 条带来源的条目（其中参数 6 条），六类要素都有带证据条目。唯一一条 `gaps` 是边界说明——本次没给正文（没有对齐可做）。`对照` 已按 SKILL.md §5 从材料抽到四项：基线对象 `BERT-base`（materials.md:5）、对照条件 `同预算`（materials.md:5）、评价指标 `accuracy`（config.yaml:20）、指标值 `val_acc=0.872`（materials.md:17）。日志时间戳不再被误判成"无来源数值"。实际数值随材料而变，此处仅为接口示意，不是组织方固定案例结果。

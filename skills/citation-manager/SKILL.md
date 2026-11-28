@@ -236,3 +236,10 @@ python -c "import json;r=json.load(open('output/result.json'));print(r['status']
 | scripts/provenance.py | 记录输入文件的 sha256 与来源 |
 | scripts/verify_sources.py | 正文论断与所引条目的主题匹配核验 |
 | scripts/score_run.py | 汇总本次运行的量化指标 |
+
+## 值不值得看，看这两个文件
+
+| 想知道的 | 看哪 |
+|-|-|
+| 与现成工具比，边界在哪、做不到什么 | `docs/对比与边界.md` |
+| 每条结论的出处 | `result.json` 里带出处的那几个字段，见上面的输出契约表 |

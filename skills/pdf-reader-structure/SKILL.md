@@ -195,3 +195,10 @@ python -c "import json;r=json.load(open('o/result.json',encoding='utf-8'));print
 | 排得对 | 表格单元格先剔除再聚栏，栏左→右、栏内上→下 | `blocks.json` 的 `col`、`stats["columns"]` | 第 9 节第 2 条 |
 | 拆得清 | 标题层级、标题/作者/单位/摘要、表格网格、公式编号 | `docmeta`、`sections`、`tables`、`formulas` | 第 9 节第 4 条 |
 | 核得回 | 每块给 `page` 与实测 bbox；实测不到的块标 `bbox_est` | `evidence`、`blocks.json` | 第 9 节第 7 条 |
+
+## 值不值得看，看这两个文件
+
+| 想知道的 | 看哪 |
+|-|-|
+| 与现成工具比，边界在哪、做不到什么 | `docs/对比与边界.md` |
+| 每条结论的出处 | `result.json` 里带出处的那几个字段，见上面的输出契约表 |

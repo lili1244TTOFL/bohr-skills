@@ -117,7 +117,7 @@ python run.py --source examples/paper.md --polished examples/polished.md \
 | 输入标识 | 原稿 sha256 前 16 位、编码、字数、段数、句数、术语表条数与冲突、基线、目标文体及来源 | full：对照条件可复核 |
 | 段落覆盖 | 每段类型、字数、句数、命中码、已改动句数、处理状态 | full：逐段 |
 | 覆盖清单 | 题面处理项 → covered/partial/missing + 证据指针 | full：14 项 |
-| 基线对照 | 同一函数、同一术语表、同一阈值下的指标表与结论 | 有 `--baseline` 时 full |
+| 基线对照 | 同一函数、同一术语表、同一阈值下的指标表、结论与基线逐条命中 | 有 `--baseline` 时 full |
 
 `output_contract` 给了就逐字段回显：认得的写实际内容，认不得的置 null 并记入 `gaps`。没给也照样输出「目标产物 / 事实与来源映射 / 版本与边界」三项。
 
@@ -175,7 +175,7 @@ python run.py --source examples/draft_cn.md --out o3             # needs_polish
 | 说得像 | 术语表锁定后回扫改后稿（T01–T03）；缩写首现与单位写法（A01–A04）；目标文体越界（S01） | `bilingual.md`、`changes.md` |
 | 没改坏 | 六项守恒先比数量再比集合（K01、K03–K06）；强度削弱与凭空加强分开报（K02、K07） | `changes.md` §守恒 |
 | 讲得清 | 逐句原文/改文/类型/理由/置信度/词级变更（M02）；整句重写度量（M01） | `changes.md` §逐句 |
-| 可对照 | 同一 `evaluate()` 跑基线与改后稿，条件写进 `基线对照.条件` | `compare.md` |
+| 可对照 | 同一 `evaluate()` 跑基线与改后稿，条件写进 `基线对照.条件`，基线逐条命中写进 `基线对照.基线问题` | `compare.md` |
 
 ## 11 输入标识与证据
 
@@ -195,3 +195,10 @@ python run.py --source examples/draft_cn.md --out o3             # needs_polish
 | `examples/` | 英文摘要、中文摘要、中译英、弱基线四组示意输入（标明为示例） |
 
 版本 4.0.0：相对 3.x 增加逐句修改说明、逐段对照、覆盖清单、缩写与文体检查、集合级守恒、基线对照；`needs_polish` 改为「未做任何改写」才置。只依赖 Python 3.10+ 标准库，无网络、无模型调用。
+
+## 值不值得看，看这两个文件
+
+| 想知道的 | 看哪 |
+|-|-|
+| 与现成工具比，边界在哪、做不到什么 | `docs/对比与边界.md` |
+| 每条结论的出处 | `result.json` 里带出处的那几个字段，见上面的输出契约表 |

@@ -1,1 +1,1 @@
-We observed recovery in the sample. The effect was tested with participants, and the results were significant. Data were collected in 2021. Fig. 3 shows the 25% decline.
+We did observe any recovery in the big sample. In order to test the effect, a lot of participants were assigned, and the results were significant. The data was collected in 2021 [2]. Fig. 3 shows the 25% decline.

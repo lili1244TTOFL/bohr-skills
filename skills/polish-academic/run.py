@@ -1034,7 +1034,11 @@ def main(argv=None) -> int:
                 b, s = mb[k], mp[k]
                 better = "持平"
                 if isinstance(b, (int, float)) and isinstance(s, (int, float)):
-                    better = "更好" if s < b else ("更差" if s > b else "持平")
+                    if k == "平均相似度":
+                        # 相似度越接近 1 越接近最小编辑，方向与其他指标相反
+                        better = "更好" if s > b else ("更差" if s < b else "持平")
+                    else:
+                        better = "更好" if s < b else ("更差" if s > b else "持平")
                 cmp_rows.append({"指标": k, "基线": b, "本 Skill": s, "判定": better})
             better = sum(1 for r in cmp_rows if r["判定"] == "更好")
             worse = sum(1 for r in cmp_rows if r["判定"] == "更差")
@@ -1042,7 +1046,8 @@ def main(argv=None) -> int:
                            "结论": ("本 Skill 优于基线" if better > worse else
                                     ("与基线持平" if better == worse else "本 Skill 劣于基线"))}
             (out / "compare.md").write_text(render_compare(cmp_rows, cmp_verdict,
-                                                           src_p, bp, glossary, style),
+                                                           src_p, bp, glossary, style,
+                                                           be["problems"]),
                                             encoding="utf-8")
 
     # ---------------- 写产物 ----------------
@@ -1141,6 +1146,8 @@ def main(argv=None) -> int:
         "覆盖清单": coverage,
         "检查码统计": dict(ev["problem_codes"]),
         "基线对照": ({"指标": cmp_rows, "结论": cmp_verdict,
+                      "基线问题": be["problems"],
+                      "基线检查码统计": dict(be["problem_codes"]),
                       "条件": {"同一原稿": sha16(src), "同一术语表": glossary["path"],
                                "同一规则版本": VERSION, "同一函数": "evaluate()"}}
                      if cmp_rows else None),
@@ -1294,7 +1301,7 @@ def render_coverage(cov: list, ev: dict, status: str, para_rows: list) -> str:
 
 
 def render_compare(rows: list, verdict: dict | None, src_p: Path, base_p: Path,
-                   glossary: dict, style: str | None) -> str:
+                   glossary: dict, style: str | None, base_problems: list) -> str:
     L = ["# 基线对照（同一原稿 / 同一术语表 / 同一规则与阈值）", "",
          f"- 原稿：`{src_p.name}`；基线：`{base_p.name}`",
          f"- 术语表条数：{len(glossary['rows'])}；目标文体：{style or '未定'}",
@@ -1306,6 +1313,13 @@ def render_compare(rows: list, verdict: dict | None, src_p: Path, base_p: Path,
     if verdict:
         L += ["", f"**结论**：{verdict['结论']}（更好 {verdict['更好项']} 项 / "
                   f"更差 {verdict['更差项']} 项）"]
+    L += ["", "## 基线逐条命中（同一 `evaluate()` 的实际输出）", "",
+          "| 码 | 说明 |", "|-|-|"]
+    if base_problems:
+        for p in base_problems:
+            L.append(f"| {p['code']} | {cell(p['detail'], 200)} |")
+    else:
+        L.append("| — | 基线在 K/T/A/S/M 组均无命中 |")
     L += ["", "指标含义：「问题」为 K/T/A/S/M 组问题总数（越少越好）；"
               "「未处理检出」为检出了但片段仍留在改后稿里的条数（越少越好，"
               "但删掉原句也会把它压低——这类改写会改由 K02 强度削弱报出来）；"
